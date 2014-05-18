@@ -257,6 +257,9 @@ sessionID = ""
 describe "manager app test", ->
 
   before (done) ->
+    console.log 'before'
+    console.log "username: #{name}"
+    console.log "password: #{test_pass}"
     Manager.createUser {username: name, password: test_pass}, (err, user) ->
       attrs =
         name: test_group_name
@@ -276,14 +279,12 @@ describe "manager app test", ->
     done()
 
   it "Session:login", (done) ->
-    p = test_pass+"10101010"
     data =
       username: name
       password: test_pass
     api.post("/api/session/login").send(data).expect(302).end (err, res) ->
-      console.log res
       assert.equal res.header.location, "/"
-      cookie = res.header['set-cookie']
+      cookie = res.headers.cookie
       console.log cookie
       done()
 

@@ -30,14 +30,16 @@ class BabascriptManager
       console.log 'deserializeUser'
       console.log username
       done err, username
-    passport.use(new LocalStrategy (username, password, done)=>
+    passport.use(new LocalStrategy (username, password, done) =>
       data =
         username: username
         password: password
       @login data, (err, user) ->
         return done err if err
+        console.log "localStrategy"
+        console.log user
         if !user
-          done null, false, {message: 'invalid user'}
+          done null, null, {message: 'invalid user'}
         else
           done null, user
     )
@@ -47,8 +49,8 @@ class BabascriptManager
       passport.authenticate 'local',
         successRedirect: '/'
         failureRedirect: '/api/session/failure'
-        failureFlash: true
-    @app.post '/api/session/login', (req,res, next) ->
+        failureFlash: false
+    @app.post '/api/session/login', (req, res, next) ->
       auth(req, res, next)
     @app.get '/api/session', (req, res, next) ->
       if req.session.passport.user?
