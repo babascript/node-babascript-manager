@@ -10,7 +10,21 @@
   },
   "author": "",
   "license": "MIT",
-  "dependencies": {},
+  "dependencies": {
+    "mongoose": "^3.8.9",
+    "underscore": "^1.6.0",
+    "linda-socket.io": "^0.2.0",
+    "express": "^4.2.0",
+    "passport-local": "^1.0.0",
+    "passport": "^0.2.0",
+    "express-session": "^1.1.0",
+    "body-parser": "^1.2.0",
+    "method-override": "^1.0.1",
+    "cookie-parser": "^1.1.0",
+    "socket.io": "^0.9.16",
+    "supertest": "^0.12.1",
+    "request": "^2.35.0"
+  },
   "devDependencies": {
     "coffeelint": "^1.3.0",
     "coffeelint-stylish": "0.0.1",
