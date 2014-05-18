@@ -4,7 +4,7 @@
   "private": true,
   "description": "",
   "bin": "",
-  "main": "lib/index.js",
+  "main": "lib/manager.js",
   "scripts": {
     "test": "grunt test"
   },
