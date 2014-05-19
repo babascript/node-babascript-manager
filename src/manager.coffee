@@ -1,5 +1,5 @@
 mongoose = require 'mongoose'
-mongoose.connect 'mongodb://localhost/babascript/manager'
+# mongoose.connect 'mongodb://localhost/babascript/manager'
 _ = require 'underscore'
 Crypto = require 'crypto'
 LindaSocketIO = require('linda-socket.io')
@@ -25,20 +25,21 @@ class BabascriptManager
       console.log 'serializeUser'
       console.log user
       username = user.get 'username'
-      done null, user
+      u =
+        username: username
+      done null, u
     passport.deserializeUser (username, done) ->
       console.log 'deserializeUser'
       console.log username
-      done err, username
+      done null, username
     passport.use(new LocalStrategy (username, password, done) =>
       data =
         username: username
         password: password
       @login data, (err, user) ->
-        return done err if err
-        console.log "localStrategy"
-        console.log user
-        if !user
+        if err
+          done err, null
+        else if !user
           done null, null, {message: 'invalid user'}
         else
           done null, user
@@ -50,8 +51,18 @@ class BabascriptManager
         successRedirect: '/'
         failureRedirect: '/api/session/failure'
         failureFlash: false
+    @app.use (req, res, next) ->
+      if req.session.passport.user?
+        next()
+      else if req.url.match /^\/api\/session/
+        next()
+      else
+        return res.send 403
     @app.post '/api/session/login', (req, res, next) ->
       auth(req, res, next)
+    @app.delete '/api/session/logout', (req, res, next) ->
+      delete req.session
+      res.send 200
     @app.get '/api/session', (req, res, next) ->
       if req.session.passport.user?
         res.send 200
@@ -61,14 +72,11 @@ class BabascriptManager
       res.send 200
       return res.end()
     @app.get '/api/session/failure', (req,res, next) ->
-      console.log 'failure'
       res.send 500
     @app.post '/api/user/new', (req, res, next)=>
-      console.log req.body
       username = req.param 'username'
       password = req.param 'password'
       attrs = {username: username, password: password}
-      console.log attrs
       @createUser attrs, (err, user) ->
         throw err if err
         res.send 200
@@ -122,8 +130,7 @@ class BabascriptManager
 
   login: (attrs, callback) ->
     User.login attrs, (err, user) ->
-      throw err if err
-      callback null, user
+      callback err, user
 
 
 class BBObject

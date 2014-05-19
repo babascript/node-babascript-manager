@@ -10,8 +10,12 @@ Manager = Manager.Manager
 _    = require 'underscore'
 http = require 'http'
 url = require 'url'
+mongoose = require 'mongoose'
+mongoose.connect "mongodb://localhost/babascript/manager"
+
 express = require 'express'
 session = require 'express-session'
+MongoStore = require("connect-mongo")(session)
 passport = require 'passport'
 
 test_name = "baba_test_#{Date.now()}"
@@ -240,16 +244,19 @@ app.use (req, res, next) ->
 
 app.use session
   secret: "session:hogefuga"
-  key: "sessionID"
+  store: new MongoStore
+    db: "localhost"
   cookie:
-    secure: true
     httpOnly: false
     maxAge: 1000*60*60*24*7
+
 server = app.listen 3030
 io = require('socket.io').listen server
 name = test_name+"11"
 request = require 'request'
 supertest = require "supertest"
+superagent = require "superagent"
+testUser = superagent.agent()
 api = null
 cookie = null
 sessionID = ""
@@ -266,6 +273,7 @@ describe "manager app test", ->
         owner: user
         members: user
       Manager.createGroup attrs, (err, group) ->
+
         done()
   after (done) ->
     done()
@@ -273,10 +281,22 @@ describe "manager app test", ->
   it "attach", (done) ->
     Manager.attach io, server, app
     # assert.ok io instanceof Socket.IO.clien
-    # assert.ok server instanceof http.Server
+    assert.ok server instanceof http.Server
     # assert.ok app instanceof express
     api = supertest.agent app
     done()
+
+  it "session: login failure", (done) ->
+    p = test_pass+"failure"
+    data =
+      username: name
+      password: p
+    api.post("/api/session/login").send(data).expect(302).end (err, res) ->
+      console.log res.header
+      done()
+
+  it "get data failure on not login", (done) ->
+    api.get("/api/user/#{name}").expect(403).end done
 
   it "Session:login", (done) ->
     data =
@@ -284,12 +304,15 @@ describe "manager app test", ->
       password: test_pass
     api.post("/api/session/login").send(data).expect(302).end (err, res) ->
       assert.equal res.header.location, "/"
-      cookie = res.headers.cookie
-      console.log cookie
       done()
 
   it "Session isLogin?", (done) ->
-    api.get("/api/session").expect(200).end done
+    data =
+      username: name
+      password: test_pass
+    api.get("/api/session").expect(200).end (err, res) ->
+      throw err if err
+      done()
 
   it "POST /api/user/new", (done) ->
     data = {username: name+"9898", password: test_pass+"9898"}
@@ -301,8 +324,7 @@ describe "manager app test", ->
 
   it "GET /api/user/:name", (done) ->
     n = name + "9898"
-    api.get("/api/user/#{n}").expect(200)
-    .end (err, res) ->
+    api.get("/api/user/#{n}").expect(200).end (err, res) ->
       assert.equal err, null
       assert.equal res.body.data.username, name+"9898"
       done()
@@ -311,13 +333,13 @@ describe "manager app test", ->
     n = name+"fail"
     api.get("/api/user/#{n}").expect(500).end(done)
 
-  # it "PUT /api/user/:name change mail addres", (done) ->
-  #   data =
-  #     mailaddress: "test@babascript.org"
-  #   api.put("/api/user/#{name}").send(data).expect(200).end done
+  it "PUT /api/user/:name change mail addres", (done) ->
+    data =
+      mailaddress: "test@babascript.org"
+    api.put("/api/user/#{name}").send(data).expect(200).end done
 
-  # it "PUT /api/user/:name change your password", (done) ->
-  #   api.put("/api/user/#{name}").send().expect(200).end(done)
+  it "PUT /api/user/:name change your password", (done) ->
+    api.put("/api/user/#{name}").send().expect(200).end(done)
 
   # it "DELETE /api/user/:name", (done) ->
   #   api.delete("/api/user/#{name}").send().expect(200).end(done)
