@@ -25,8 +25,10 @@ class BabascriptManager
       console.log 'serializeUser'
       console.log user
       username = user.get 'username'
+      password = user.get 'password'
       u =
         username: username
+        password: password
       done null, u
     passport.deserializeUser (username, done) ->
       console.log 'deserializeUser'
@@ -36,7 +38,11 @@ class BabascriptManager
       data =
         username: username
         password: password
+      console.log "local storategy"
+      console.log data
       @login data, (err, user) ->
+        console.log err
+        console.log user
         if err
           done err, null
         else if !user
@@ -64,6 +70,7 @@ class BabascriptManager
       delete req.session
       res.send 200
     @app.get '/api/session', (req, res, next) ->
+      console.log req.session
       if req.session.passport.user?
         res.send 200
       else
@@ -80,16 +87,61 @@ class BabascriptManager
       @createUser attrs, (err, user) ->
         throw err if err
         res.send 200
-    @app.get  '/api/user/:name', (req, res, next)=>
+    @app.get  '/api/user/:name', (req, res, next) =>
       @getUser req.params.name, (err, user) ->
         if err
           res.send 500
+        else if !user?
+          res.send 404
         else
           res.json 200, user
     @app.put  '/api/user/:name', (req, res, next) ->
-      res.send 200
+      username = req.params.name
+      password = req.session.passport.user.password
+      data = req.body
+      param =
+        username: username
+        password: password
+      UserModel.findOne param, (err, user) ->
+        if err or !user?
+          res.send 500
+        else
+          for key,value of data
+            user[key] = value
+          user.save (err) ->
+            throw err if err
+            res.send 200
+      # @getUser username, (err, user) ->
+      #   if err or !user?
+      #     res.send 500
+      #   else if req.session.passport.user.username isnt username
+      #     res.send 403
+      #   else
+      #
+      #     user.authenticate password, (result) ->
+      #       if !result
+      #         res.send 404
+      #       else
+      #         for key, value of data
+      #           user.set key, value
+      #         user.save (err) ->
+      #           throw err if err
+      #           res.send 200
     @app.delete '/api/user/:name', (req, res, next) ->
-      res.send 200
+      username = req.params.name
+      @getUser username, (err, user) ->
+        if err or !user?
+          res.send 500
+        else if req.session.passport.user.username isnt username
+          res.send 403
+        else
+          password = req.session.passport.user.password
+          user.authenticate password, (result) ->
+            if !result
+              res.send 403
+            else
+              user.remove()
+              res.send 200
     @app.post '/api/group/new', (req, res, next) ->
       res.send 200
     @app.get  '/api/group/:name', (req, res, next) ->
@@ -140,9 +192,9 @@ class BBObject
   save: (callback) ->
     if !@data? or !@__data?
       error = new Error 'data is undefined'
-      callback error, null
+      callback.call @,  error
     else
-      @data.save (err)=>
+      @data.save (err) =>
         if err
           @data = @__data
           error = new Error 'save error'
@@ -154,12 +206,29 @@ class BBObject
   set: (key, value) ->
     if !(typeof key is 'string') and !(typeof key is 'number')
       throw new Error 'key should be String or Number'
-    @data[key] = value
+    # console.log "SET: attribute key? #{!@data[key]?}: #{key} is #{value}"
+    if @data[key]?
+      @data[key] = value
+    else
+      if !@data.attribute?
+        @data.attribute = {}
+      @data.attribute[key] = value
 
   get: (key) ->
     if (typeof key isnt 'string') and (typeof key isnt 'number')
       throw new Error 'key should be String or Number'
-    return @data[key]
+    if @data[key]?
+      # console.log "GET: attribute key? #{!@data[key]?}:"+
+      "key is #{key}, value is #{@data[key]}"
+      return @data[key]
+    else
+      # console.log "GET: attribute key? #{!@data[key]?}:" +
+      "key is #{key}, value is #{@data.attribute[key]}"
+      return @data.attribute[key]
+
+  # delete: (callback) ->
+  #   @data.remove (err) ->
+  #     callback err
 
 
 class User extends BBObject
@@ -180,6 +249,7 @@ class User extends BBObject
       else
         u.data = user
         u.__data = _.clone u.data
+        u.__data.attribute = _.clone u.data.attribute
         u.isAuthenticate = false
         return callback.call u, null, u
 
@@ -209,6 +279,7 @@ class User extends BBObject
         u.data = new UserModel()
         u.data.username = username
         u.data.password = pass
+        u.data.attribute = {}
         u.isAuthenticate = true
         u.save (err) ->
           callback.call u, err, u
@@ -224,6 +295,7 @@ class User extends BBObject
       return callback new Error("authenticate failed"), null if !user?
       u = new User()
       u.data = user
+      u.__data = _.clone u.data
       u.isAuthenticate = true
       callback null, u
 
@@ -241,9 +313,10 @@ class User extends BBObject
   save: (callback) ->
     if !@isAuthenticate
       error = new Error "ERROR: user isn't authenticated"
-      @data = @__data
+      @data = _.clone @__data
       return callback.call @, error
-    super callback
+    else
+      super callback
   #   if !@isAuthenticate
   #     @data = @__data
   #     return callback.call @, false
@@ -372,19 +445,6 @@ class User extends BBObject
       throw err if err
       callback true
 
-  changeTwitterAccount: (newAccount, callback) ->
-    return callback false, null if !@isAuthenticate
-    username = @get "username"
-    @set "twitter", newAccount
-    @save (user) ->
-      callback true, user
-
-  changeMailAddress: (newAddress, callback) ->
-    return callback false, null if !@isAuthenticate
-    @set "mail", newAddress
-    @save (user) ->
-      callback true, user
-
 class Group extends BBObject
   data: {}
   __data: {}
@@ -502,8 +562,7 @@ class Group extends BBObject
 UserModel = mongoose.model "user", new mongoose.Schema
   username: type: String
   password: type: String
-  twitter: type: String
-  mail: type: String
+  attribute: {type: mongoose.Schema.Types.Mixed}
   device: type: {type: mongoose.Schema.Types.ObjectId, ref: "device"}
   groups: type: [{type: mongoose.Schema.Types.ObjectId, ref: "group"}]
 
