@@ -82,10 +82,7 @@ class BabascriptManager
         res.send 200
     @app.get  '/api/user/:name', (req, res, next) =>
       @getUser req.params.name, (err, user) ->
-        console.log user
-        if err
-          res.send 500
-        else if !user?
+        if err or !user?
           res.send 404
         else
           res.json 200, user
@@ -114,13 +111,11 @@ class BabascriptManager
               user.save (err) ->
                 throw err if err
                 res.send 200
-    @app.delete '/api/user/:name', (req, res, next) ->
+    @app.delete '/api/user/:name', (req, res, next) =>
       username = req.params.name
       password = req.body.password
       console.log "delete"
       @getUser username, (err, user) ->
-        console.log err
-        console.log "delete user get"
         if err or !user?
           res.send 500
         else if req.session.passport.user.username isnt username
@@ -130,8 +125,9 @@ class BabascriptManager
             if !result
               res.send 403
             else
-              user.remove()
-              res.send 200
+              user.delete (err) ->
+                throw err if err
+                res.send 200
     @app.post '/api/group/new', (req, res, next) ->
       res.send 200
     @app.get  '/api/group/:name', (req, res, next) ->

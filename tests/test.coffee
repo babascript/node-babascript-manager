@@ -332,7 +332,7 @@ describe 'manager app test', ->
 
   it 'GET /api/user/:name fail', (done) ->
     n = name+"fail"
-    api.get("/api/user/#{n}").expect(500).end(done)
+    api.get("/api/user/#{n}").expect(404).end(done)
 
   it 'PUT /api/user/:name change mail address', (done) ->
     data =
