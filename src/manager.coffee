@@ -21,34 +21,28 @@ class BabascriptManager
       socket.on '__linda_write', @Socket.write
       socket.on '__linda_take', @Socket.take
       socket.on '__linda_cancel', @Socket.cancel
-    passport.serializeUser (user, done) ->
-      console.log 'serializeUser'
-      console.log user
-      username = user.get 'username'
-      password = user.get 'password'
+    passport.serializeUser (data, done) ->
+      # username = user.get 'username'
+      # password = user.get 'password
+      username = data.username
+      password = data.password
       u =
         username: username
         password: password
       done null, u
-    passport.deserializeUser (username, done) ->
-      console.log 'deserializeUser'
-      console.log username
-      done null, username
+    passport.deserializeUser (data, done) ->
+      done null, data
     passport.use(new LocalStrategy (username, password, done) =>
       data =
         username: username
         password: password
-      console.log "local storategy"
-      console.log data
       @login data, (err, user) ->
-        console.log err
-        console.log user
         if err
           done err, null
         else if !user
           done null, null, {message: 'invalid user'}
         else
-          done null, user
+          done null, data
     )
     @app.use passport.initialize()
     @app.use passport.session()
@@ -70,7 +64,6 @@ class BabascriptManager
       delete req.session
       res.send 200
     @app.get '/api/session', (req, res, next) ->
-      console.log req.session
       if req.session.passport.user?
         res.send 200
       else
@@ -89,53 +82,50 @@ class BabascriptManager
         res.send 200
     @app.get  '/api/user/:name', (req, res, next) =>
       @getUser req.params.name, (err, user) ->
+        console.log user
         if err
           res.send 500
         else if !user?
           res.send 404
         else
           res.json 200, user
-    @app.put  '/api/user/:name', (req, res, next) ->
+    @app.put  '/api/user/:name', (req, res, next) =>
       username = req.params.name
       password = req.session.passport.user.password
       data = req.body
       param =
         username: username
         password: password
-      UserModel.findOne param, (err, user) ->
-        if err or !user?
-          res.send 500
-        else
-          for key,value of data
-            user[key] = value
-          user.save (err) ->
-            throw err if err
-            res.send 200
-      # @getUser username, (err, user) ->
-      #   if err or !user?
-      #     res.send 500
-      #   else if req.session.passport.user.username isnt username
-      #     res.send 403
-      #   else
-      #
-      #     user.authenticate password, (result) ->
-      #       if !result
-      #         res.send 404
-      #       else
-      #         for key, value of data
-      #           user.set key, value
-      #         user.save (err) ->
-      #           throw err if err
-      #           res.send 200
-    @app.delete '/api/user/:name', (req, res, next) ->
-      username = req.params.name
       @getUser username, (err, user) ->
         if err or !user?
           res.send 500
         else if req.session.passport.user.username isnt username
           res.send 403
         else
-          password = req.session.passport.user.password
+          user.authenticate password, (result) ->
+            if !result
+              res.send 404
+            else
+              for key, value of data
+                if key is 'password'
+                  value = Crypto.createHash("sha256")
+                  .update(value).digest("hex")
+                user.set key, value
+              user.save (err) ->
+                throw err if err
+                res.send 200
+    @app.delete '/api/user/:name', (req, res, next) ->
+      username = req.params.name
+      password = req.body.password
+      console.log "delete"
+      @getUser username, (err, user) ->
+        console.log err
+        console.log "delete user get"
+        if err or !user?
+          res.send 500
+        else if req.session.passport.user.username isnt username
+          res.send 403
+        else
           user.authenticate password, (result) ->
             if !result
               res.send 403
@@ -189,30 +179,36 @@ class BBObject
   data: {}
   __data: {}
 
+  constructor: (attr) ->
+    @_serverData = {}
+    @isChanged = false
+
   save: (callback) ->
+    return callback.call @, new Error("not change") if !@isChanged
     if !@data? or !@__data?
       error = new Error 'data is undefined'
       callback.call @,  error
     else
       @data.save (err) =>
         if err
-          @data = @__data
-          error = new Error 'save error'
-          callback.call @, err
+          @data = _.clone @__data
         else
           @__data = _.clone @data
-          callback.call @, null
+        callback.call @, err
+        @isChanged = false
 
   set: (key, value) ->
     if !(typeof key is 'string') and !(typeof key is 'number')
       throw new Error 'key should be String or Number'
     # console.log "SET: attribute key? #{!@data[key]?}: #{key} is #{value}"
+    @isChanged = true
     if @data[key]?
       @data[key] = value
     else
       if !@data.attribute?
         @data.attribute = {}
       @data.attribute[key] = value
+      @data.markModified 'attribute'
 
   get: (key) ->
     if (typeof key isnt 'string') and (typeof key isnt 'number')
@@ -222,8 +218,6 @@ class BBObject
       "key is #{key}, value is #{@data[key]}"
       return @data[key]
     else
-      # console.log "GET: attribute key? #{!@data[key]?}:" +
-      "key is #{key}, value is #{@data.attribute[key]}"
       return @data.attribute[key]
 
   # delete: (callback) ->
@@ -281,6 +275,7 @@ class User extends BBObject
         u.data.password = pass
         u.data.attribute = {}
         u.isAuthenticate = true
+        u.isChanged = true
         u.save (err) ->
           callback.call u, err, u
 
@@ -350,6 +345,7 @@ class User extends BBObject
     return callback new Error("not authenticated"), false if !@isAuthenticate
     @data.remove (err, user) ->
       throw err if err
+      delete @
       callback null, true
 
   addGroup: (name, callback) ->
@@ -463,6 +459,7 @@ class Group extends BBObject
       group.data.name = attrs.name
       group.data.owners.push attrs.owner.data._id
       group.data.members = []
+      group.isChanged = true
       if attrs.members
         for member in attrs.members
           group.data.members.push member._id
@@ -559,15 +556,19 @@ class Group extends BBObject
       throw err if err
       callback group.members
 
+ObjectModel = mongoose.model 'object', new mongoose.Schema
+  attribute: type: {}
+
 UserModel = mongoose.model "user", new mongoose.Schema
   username: type: String
   password: type: String
-  attribute: {type: mongoose.Schema.Types.Mixed}
+  attribute: {}
   device: type: {type: mongoose.Schema.Types.ObjectId, ref: "device"}
   groups: type: [{type: mongoose.Schema.Types.ObjectId, ref: "group"}]
 
 GroupModel = mongoose.model "group", new mongoose.Schema
   name: type: String
+  attribute: type: {}
   owners: type: [{type: mongoose.Schema.Types.ObjectId, ref: "user"}]
   members: type: [{type: mongoose.Schema.Types.ObjectId, ref: "user"}]
 

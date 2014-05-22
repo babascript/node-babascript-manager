@@ -123,7 +123,9 @@ describe "manager program test", ->
           assert.equal err, null
           assert.equal 'mail@babascript.org', @get 'mail'
           assert.ok @ instanceof User
-          done()
+          Manager.getUser test_name, (err, u) ->
+            assert.equal 'mail@babascript.org', u.get "mail"
+            done()
 
   it "attributes: get user's mail account", (done) ->
     Manager.getUser test_name, (err, user) ->
@@ -172,6 +174,7 @@ describe "manager program test", ->
 
   it 'get group', (done) ->
     Manager.getGroup {name: test_group_name}, (err, group) ->
+      console.log err
       assert.equal err, null
       assert.ok group instanceof Group
       name = group.get 'name'
@@ -247,10 +250,6 @@ app.use session
   cookie:
     httpOnly: false
     maxAge: 1000*60*60*24*7
-
-app.use (req, res, next) ->
-  console.log "hoge"
-  next()
 
 server = app.listen 3030
 io = require('socket.io').listen server
@@ -335,37 +334,43 @@ describe 'manager app test', ->
     n = name+"fail"
     api.get("/api/user/#{n}").expect(500).end(done)
 
-  it 'PUT /api/user/:name change mail addres', (done) ->
+  it 'PUT /api/user/:name change mail address', (done) ->
     data =
       mail: mailaddress
     api.put("/api/user/#{name}").send(data).expect(200).end done
 
   it "GET check modify /api/user/name", (done) ->
     api.get("/api/user/#{name}").expect(200).end (err, res) ->
+      console.log res.body.data
       assert.equal res.body.data.username, name
-      assert.equal res.body.data.mail, mailaddress
+      assert.equal res.body.data.attribute.mail, mailaddress
       done()
 
   it "PUT /api/user/:name change your password", (done) ->
     p = test_pass + '1101'
     data =
       password: p
-    console.log p
-    api.put("/api/user/#{name}").send().expect(200).end(done)
+    api.put("/api/user/#{name}").send(data).expect(200).end(done)
 
   it "GET check modify password", (done) ->
     failPass = test_pass
     successPass = test_pass + '1101'
     api.get("/api/user/#{name}").expect(200).end (err, res) ->
-      # console.log res.body
       fail = Crypto.createHash("sha256").update(failPass).digest("hex")
       success = Crypto.createHash("sha256").update(successPass).digest("hex")
       assert.notEqual res.body.data.password, fail
       assert.equal res.body.data.password, success
       done()
 
-  # it "DELETE /api/user/:name", (done) ->
-  #   api.delete("/api/user/#{name}").send().expect(200).end(done)
+  it "DELETE /api/user/:name", (done) ->
+    p = test_pass + '1101'
+    data =
+      username: name
+      password: p
+    api.delete("/api/user/#{name}").send(data).expect(200).end(done)
+
+  it "check user delete", (done) ->
+    api.get("/api/user/#{name}").expect(404).end done
 
   # it "POST /api/group/new", (done) ->
   #   api.post("/api/group/new").send().expect(200).end(done)
