@@ -3,27 +3,29 @@ mongoose = require 'mongoose'
 _ = require 'underscore'
 Crypto = require 'crypto'
 LindaSocketIO = require('linda-socket.io')
-Linda = LindaSocketIO.Linda
-TupleSpace = LindaSocketIO.TupleSpace
+LocalStrategy = require('passport-local').Strategy
 express = require 'express'
 passport = require 'passport'
-LocalStrategy = require('passport-local').Strategy
+async = require 'async'
+
+Linda = LindaSocketIO.Linda
+TupleSpace = LindaSocketIO.TupleSpace
 
 class BabascriptManager
 
-  attach: (@io, @server, @app) ->
+  attach: (@io, @app) ->
     throw new Error 'io not found' if !@io?
-    throw new Error 'server not found' if !@server?
+    throw new Error 'server not found' if !@io.server?
     throw new Error 'app not found' if !@app?
-    @linda = Linda.listen {io: io, server: server}
-    @linda.io.on 'connection', (socket)=>
-      socket.on 'disconnect', @Socket.disconnect
-      socket.on '__linda_write', @Socket.write
-      socket.on '__linda_take', @Socket.take
-      socket.on '__linda_cancel', @Socket.cancel
+    @linda = Linda.listen {io: @io, server: @io.server}
+    @linda.io.set 'log lebel', 2
+    @linda.io.set 'baba', 'takumi'
+    @linda.io.on 'connection', (socket) ->
+      socket.on 'disconnect', ->
+      socket.on '__linda_write', (data) ->
+      socket.on '__linda_take', (data) ->
+      socket.on '__linda_cancel', (data) ->
     passport.serializeUser (data, done) ->
-      # username = user.get 'username'
-      # password = user.get 'password
       username = data.username
       password = data.password
       u =
@@ -51,13 +53,15 @@ class BabascriptManager
         successRedirect: '/'
         failureRedirect: '/api/session/failure'
         failureFlash: false
-    @app.use (req, res, next) ->
-      if req.session.passport.user?
-        next()
-      else if req.url.match /^\/api\/session/
-        next()
-      else
-        return res.send 403
+    @app.get '/api/imbaba/:name', (req, res, next) =>
+      attr =
+        name: req.params.name
+      @getGroup attr, (err, group) ->
+        if err or !group?
+          res.send 400
+        else
+          members = group.get "members"
+          res.send 200, members
     @app.post '/api/session/login', (req, res, next) ->
       auth(req, res, next)
     @app.delete '/api/session/logout', (req, res, next) ->
@@ -67,28 +71,38 @@ class BabascriptManager
       if req.session.passport.user?
         res.send 200
       else
-        res.send 500
+        res.send 404
     @app.get '/api/session/success', (req, res, next) ->
       res.send 200
-      return res.end()
     @app.get '/api/session/failure', (req,res, next) ->
       res.send 500
     @app.post '/api/user/new', (req, res, next)=>
+      return res.send 404 if !req.session.passport.user?
       username = req.param 'username'
       password = req.param 'password'
       attrs = {username: username, password: password}
       @createUser attrs, (err, user) ->
-        throw err if err
-        res.send 200
+        if err or !user?
+          res.send 404
+        else
+          res.send 200, user
     @app.get  '/api/user/:name', (req, res, next) =>
       @getUser req.params.name, (err, user) ->
         if err or !user?
           res.send 404
         else
-          res.json 200, user
+          if req.session.passport.user?.username is user.data?.username
+            res.json 200, user
+          else
+            u =
+              data:
+                username: user.data.username
+            res.json 200, u
+
     @app.put  '/api/user/:name', (req, res, next) =>
+      return res.send 404 if !req.session.passport.user?
       username = req.params.name
-      password = req.session.passport.user.password
+      password = req.session.passport.user?.password
       data = req.body
       param =
         username: username
@@ -111,10 +125,11 @@ class BabascriptManager
               user.save (err) ->
                 throw err if err
                 res.send 200
-    @app.delete '/api/user/:name', (req, res, next) =>
+
+    @app.del '/api/user/:name', (req, res, next) =>
+      return res.send 404 if !req.session.passport.user?
       username = req.params.name
       password = req.body.password
-      console.log "delete"
       @getUser username, (err, user) ->
         if err or !user?
           res.send 500
@@ -128,14 +143,102 @@ class BabascriptManager
               user.delete (err) ->
                 throw err if err
                 res.send 200
+
     @app.post '/api/group/new', (req, res, next) ->
+      return res.send 404 if !req.session.passport.user?
+      attrs =
+        owner: req.body.owner
+        name: req.body.name
+
+      @createGroup attrs, (err, group) ->
+        if err or !group?
+          res.send 404
+        else
+          res.send 200, group
+
+    @app.get  '/api/group/:name', (req, res, next) =>
+      attr =
+        name: req.params.name
+      @getGroup attr, (err, group) ->
+        if err or !group?
+          res.send 404, err
+        else
+          res.send 200, group
+
+    @app.put  '/api/group/:name', (req, res, next) =>
+      return res.send 404 if !req.session.passport.user?
+      attr =
+        name: req.params.name
+      data = req.body
+      @getGroup attr, (err, group) ->
+        if err or !group?
+          res.send 404, err
+        else
+          for key, value of data
+            group.set key, value
+          group.save (err) ->
+            return res.send 404, err if err
+            res.send 200
+
+    @app.del '/api/group/:name', (req, res, next) ->
+      return res.send 404 if !req.session.passport.user?
       res.send 200
-    @app.get  '/api/group/:name', (req, res, next) ->
-      res.send 200
-    @app.put  '/api/group/:name', (req, res, next) ->
-      res.send 200
-    @app.delete '/api/group/:name', (req, res, next) ->
-      res.send 200
+
+    @app.post '/api/group/:name/member', (req, res, next) =>
+      return res.send 404, "not logined" if !req.session.passport.user?
+      attr =
+        name: req.params.name
+      data = req.body
+      @getGroup attr, (err, group) ->
+        return res.send 404, err if err or !group?
+        data =
+          groupname: req.params.name
+          usernames: req.body.names
+        group.addMember data, (err, g) ->
+          return res.send 404, err if err or !g?
+          return res.send 200, g
+
+    @app.del '/api/group/:name/member', (req, res, next) =>
+      return res.send 404, "not logined" if !req.session.passport.user?
+      attr =
+        name: req.params.name
+      data = req.body
+      @getGroup attr, (err, group) ->
+        return res.send 404, err if err or !group?
+        data =
+          groupname: req.params.name
+          usernames: req.body.names
+        group._removeMember data, (err, g) ->
+          return res.send 404, err if err or !g?
+          return res.send 200, g
+
+    @app.get '/api/group/:name/owner', (req, res, next) ->
+    @app.post '/api/group/:name/owner', (req, res, next) =>
+      return res.send 404, "not logined" if !req.session.passport.user?
+      attr =
+        name: req.params.name
+      @getGroup attr, (err, group) ->
+        return res.send 404, err if err or !group?
+        data =
+          groupname: req.params.name
+          ownernames: req.body.names
+        group.addOwner data, (err, g) ->
+          return res.send 404, err if err or !g?
+          return res.send 200, g
+    @app.put '/api/group/:name/owner', (req, res, next) ->
+    @app.del '/api/group/:name/owner', (req, res, next) =>
+      return res.send 404, "not logined" if !req.session.passport.user?
+      attr =
+        name: req.params.name
+      @getGroup attr, (err, group) ->
+        return res.send 404, err if err or !group?
+        data =
+          groupname: req.params.name
+          usernames: req.body.names
+        group.removeOwner data, (err, g) ->
+          return res.send 404, err if err or !g?
+          return res.send 200, g
+
 
   # return status, user
   createUser: (attrs, callback) ->
@@ -169,7 +272,6 @@ class BabascriptManager
   login: (attrs, callback) ->
     User.login attrs, (err, user) ->
       callback err, user
-
 
 class BBObject
   data: {}
@@ -445,7 +547,8 @@ class Group extends BBObject
   @create = (attrs, callback) ->
     throw new Error "name is undefined" if !attrs.name
     throw new Error "owner is undefined" if !attrs.owner
-    GroupModel.findOne {name: attrs.name}, (err, group) ->
+    GroupModel.findOne({name: attrs.name}).populate('members', 'username')
+    .exec (err, group) ->
       throw err if err
       if group
         error = new Error "group is existed"
@@ -465,7 +568,8 @@ class Group extends BBObject
   @find = (attrs, callback) ->
     name = attrs.name
     throw new Error "name is undefined" if !name
-    GroupModel.findOne {name: name}, (err, group) ->
+    GroupModel.findOne({name: attrs.name}).populate('members', 'username')
+    .exec (err, group) ->
       throw err if err
       if !group
         error = new Error "group not found"
@@ -491,59 +595,141 @@ class Group extends BBObject
       group.remove()
       callback true
 
-  addMembers: (names, callback) ->
-    UserModel.find {username: {$in: names}}, (err, users)=>
-      throw err if err
-      return callback null if !users
-      ids = _.pluck users, "_id"
-      members = _.pluck @data.members, "_id"
-      newMembers = _.union ids, @data.members
+  addMember: (attrs, callback) ->
+    if @ instanceof Group
+      @_addMember attrs, (err, group) =>
+        @data = group
+        @__data = _.clone @data
+        callback.call @, err, @
+    else
+      @_addMember attrs, callback
 
-  addMember: (user, callback) ->
-    throw new Error "arg[0] user is undefined" if !user
-    id = user.get "_id"
-    UserModel.findById id, (err, user)=>
-      throw err if err
-      return callback null if !user
-      member = _.find @data.members, (m) ->
-        return m.toString() is user._id.toString()
-      @data.members.push id if !member
-      @data.save (err)=>
-        return callback err, null if err
-        id = @data._id
-        group = _.find user.groups, (group) ->
-          return group.toString() is id
-        user.groups.push id if !group
-        user.save (err)=>
-          return callback err, null if err
-          GroupModel.populate @data, {path: 'members'}, (err, group)=>
-            @data = group
-            @__data = _.clone @data
-            callback.call @, null, @
-
-  removeMember: (user, callback) ->
-    throw new Error "arg[0] user is undefined" if !user
-    id = user.get "_id"
-    UserModel.findById id, (err, user)=>
-      throw err if err
-      return callback null if !user
-      flag = false
-      for i in [0..@data.members.length-1]
-        if @data.members[i].toString() is user._id.toString()
-          @data.members.splice i, 1
-          break
-      @data.save (err)=>
+  _addMember: (attrs, callback) ->
+    usernames = attrs.usernames
+    groupname = attrs.groupname || @data.name
+    if !usernames?
+      callback new Error "user names is not undefined", null
+    else if !groupname?
+      callback new Error "group name is not undefined", null
+    else
+      GroupModel.findOne({name: groupname}).exec (err, group) =>
         throw err if err
-        for i in [0..user.groups.length-1]
-          if user.groups[i].toString() is @data._id.toString()
-            user.groups.splice i, 1
-            break
-        user.save (err)=>
+        UserModel.find {username: {$in: usernames}}, (err, users) =>
           throw err if err
-          GroupModel.populate @data, {path: "members"}, (err, group)=>
-            @data = group
-            @__data = _.clone @data
-            callback.call @, null, @
+          sFunc = []
+          sNode = []
+          for user in users
+            group.members.addToSet user._id
+            sNode.push user
+            sFunc.push (cb) ->
+              u = sNode.shift()
+              u.groups.addToSet group._id
+              u.save (err) ->
+                cb err, u
+          group.save (err) =>
+            throw err if err
+            async.parallel sFunc, (err, results) =>
+              throw err if err
+              callback.call @, null, group
+
+  removeMember: (attrs, callback) ->
+    if @ instanceof Group
+      @_removeMember attrs, (err, group) =>
+        @data = group
+        @__data - _.clone @data
+        callback.call @, err, @
+    else
+      @_removeMember attrs, callback
+
+  _removeMember: (attrs, callback) ->
+    if !attrs.usernames?
+      callback new Error "user names is not undefined", null
+    else if !attrs.groupname?
+      callback new Error "group name is not undefined", null
+    else
+      UserModel.find {username: {$in: attrs.usernames}}, (err, users) =>
+        throw err if err
+        GroupModel.findOne({name: attrs.groupname}).exec (err, group) =>
+          throw err if err
+          sFunc = []
+          sNode = []
+          for user in users
+            group.members.pull user._id
+            sNode.push user
+            sFunc.push (cb) ->
+              u = sNode.shift()
+              u.groups.pull group._id
+              u.save (err) ->
+                cb err, u
+          group.save (err) =>
+            throw err if err
+            async.parallel sFunc, (err, results) =>
+              throw err if err
+              callback.call @, null, group
+
+  addOwner: (attrs, callback) ->
+    if !attrs.ownernames?
+      callback new Error "owner's name is not undefined", null
+    else if !attrs.groupname?
+      callback new Error "group's name is not undefined", null
+    else
+      UserModel.find {username: {$in: attrs.ownernames}}, (err, users) =>
+        throw err if err
+        GroupModel.findOne {name: attrs.groupname}, (err, group) =>
+          throw err if err
+          sFunc = []
+          sNode = []
+          console.log "addowner-users"
+          console.log users
+          console.log group
+          for user in users
+            group.owners.addToSet user._id
+            sNode.push user
+            sFunc.push (cb) ->
+              u = sNode.shift()
+              u.groups.addToSet group._id
+              u.save (err) ->
+                cb err, u
+          group.save (err) =>
+            throw err if err
+            async.parallel sFunc, (err, results) =>
+              throw err if err
+              callback.call @, err, group
+
+  removeOwner: (attrs, callback) ->
+    if @ instanceof Group
+      @_removeOwner attrs, (err, group) =>
+        @data = group
+        @__data - _.clone @data
+        callback.call @, err, @
+    else
+      @_removeOwner attrs, callback
+
+  _removeOwner: (attrs, callback) ->
+    if !attrs.usernames?
+      callback new Error "owner's names is not undefined", null
+    else if !attrs.groupname?
+      callback new Error "group name is not undefined", null
+    else
+      UserModel.find {username: {$in: attrs.usernames}}, (err, users) =>
+        throw err if err
+        GroupModel.findOne({name: attrs.groupname}).exec (err, group) =>
+          throw err if err
+          sFunc = []
+          sNode = []
+          for user in users
+            group.owners.pull user._id
+            sNode.push user
+            sFunc.push (cb) ->
+              u = sNode.shift()
+              u.groups.pull group._id
+              u.save (err) ->
+                cb err, u
+          group.save (err) =>
+            throw err if err
+            async.parallel sFunc, (err, results) =>
+              throw err if err
+              callback.call @, null, group
 
   getMembers: (callback) ->
     q = GroupModel.findOne({name: @data.name})

@@ -17,6 +17,7 @@ express = require 'express'
 session = require 'express-session'
 MongoStore = require('connect-mongo')(session)
 passport = require 'passport'
+async = require "async"
 
 test_name = "baba_test_#{Date.now()}"
 test_pass = "hoge_fuga_#{Date.now()}"
@@ -174,7 +175,6 @@ describe "manager program test", ->
 
   it 'get group', (done) ->
     Manager.getGroup {name: test_group_name}, (err, group) ->
-      console.log err
       assert.equal err, null
       assert.ok group instanceof Group
       name = group.get 'name'
@@ -188,19 +188,28 @@ describe "manager program test", ->
       Manager.getUser test_name, (err, user) ->
         user.authenticate test_pass, (result) ->
           assert.ok result
-          group.addMember user, (err, group) ->
+          _id = user.get "_id"
+          username = user.get "username"
+          attrs =
+            usernames: [username]
+          group.addMember attrs, (err, group) ->
             assert.equal err, null
             assert.ok group instanceof Group
             members = group.get 'members'
             assert.equal 1, members.length
-            assert.equal user.get('username'), members[0].username
+            assert.deepEqual members[0], _id
             done()
 
   it "remove group's member", (done) ->
     Manager.getGroup {name: test_group_name}, (err, group) ->
       assert.equal err, null
       Manager.getUser test_name, (err, user) ->
-        group.removeMember user, (err, group) ->
+        id = user.get "_id"
+        name = user.get "username"
+        data =
+          groupname: test_group_name
+          usernames: [name]
+        group.removeMember data, (err, group) ->
           assert.equal err, null
           assert.ok group instanceof Group
           members = group.get 'members'
@@ -208,7 +217,21 @@ describe "manager program test", ->
           assert.equal null, members[0]
           done()
 
-  it "delete group's", (done) ->
+  it "remove group's owner", (done) ->
+    Manager.getGroup {name: test_group_name}, (err, group) ->
+      assert.equal err, null
+      attrs =
+        groupname: test_group_name
+        usernames: [test_name]
+      group.removeOwner attrs, (err, group) ->
+        assert.equal err, null
+        assert.ok group instanceof Group
+        owners = group.get 'owners'
+        assert.equal 0, owners.length
+        assert.equal null, owners[0]
+        done()
+
+  it "delete group", (done) ->
     return done()
     Manager.getGroup {name: test_group_name}, (err, group) ->
       assert.ok group instanceof Group
@@ -225,23 +248,24 @@ describe "manager program test", ->
               done()
 
 app = express()
+app.use (require 'morgan')('dev') if 'off' isnt process.env.NODE_LOG
 app.use (require 'body-parser')()
 app.use (require 'method-override')()
-app.use (req, res, next) ->
-  app.locals.req = req
-  return next null
+# app.use (req, res, next) ->
+#   app.locals.req = req
+#   return next null
 app.use require('cookie-parser')()
 
-app.use (req, res, next) ->
-  headers = 'Content-Type, Authorization, Content-Length,'
-  headers += 'X-Requested-With, Origin'
-  methods = 'POST, PUT, GET, DELETE, OPTIONS'
-  res.setHeader 'Access-Control-Allow-Origin', '*'
-  res.setHeader 'Access-Control-Allow-Credentials', true
-  res.setHeader 'Access-Control-Allow-Methods', methods
-  res.setHeader 'Access-Control-Request-Method', methods
-  res.setHeader 'Access-Control-Allow-Headers', headers
-  next()
+# app.use (req, res, next) ->
+#   headers = 'Content-Type, Authorization, Content-Length,'
+#   headers += 'X-Requested-With, Origin'
+#   methods = 'POST, PUT, GET, DELETE, OPTIONS'
+#   res.setHeader 'Access-Control-Allow-Origin', '*'
+#   res.setHeader 'Access-Control-Allow-Credentials', true
+#   res.setHeader 'Access-Control-Allow-Methods', methods
+#   res.setHeader 'Access-Control-Request-Method', methods
+#   res.setHeader 'Access-Control-Allow-Headers', headers
+#   next()
 
 app.use session
   secret: 'session:hogefuga'
@@ -251,14 +275,15 @@ app.use session
     httpOnly: false
     maxAge: 1000*60*60*24*7
 
-server = app.listen 3030
-io = require('socket.io').listen server
+server = null
+io = null
 name = test_name+'11'
+name_owner = name + "owner"
 mailaddress = 'test@babascript.org'
 request = require 'request'
 supertest = require 'supertest'
-superagent = require 'superagent'
-testUser = superagent.agent()
+request = require 'superagent'
+# testUser = superagent.agent()
 api = null
 cookie = null
 sessionID = ''
@@ -266,24 +291,23 @@ sessionID = ''
 describe 'manager app test', ->
 
   before (done) ->
-    console.log 'before'
-    console.log "username: #{name}"
-    console.log "password: #{test_pass}"
+    server = app.listen 3030
+    io = require('socket.io').listen server
     Manager.createUser {username: name, password: test_pass}, (err, user) ->
       attrs =
         name: test_group_name
         owner: user
         members: user
       Manager.createGroup attrs, (err, group) ->
-
         done()
   after (done) ->
+    # server.close()
+    # io.disconnect()
     done()
 
   it 'attach', (done) ->
-    Manager.attach io, server, app
+    Manager.attach io, app
     # assert.ok io instanceof Socket.IO.clien
-    assert.ok server instanceof http.Server
     # assert.ok app instanceof express
     api = supertest.agent app
     done()
@@ -296,8 +320,8 @@ describe 'manager app test', ->
     api.post('/api/session/login').send(data).expect(302).end (err, res) ->
       done()
 
-  it 'get data failure on not login', (done) ->
-    api.get("/api/user/#{name}").expect(403).end done
+  # it 'get data failure on not login', (done) ->
+  #   api.get("/api/user/#{name}").expect(403).end done
 
   it 'Session:login', (done) ->
     data =
@@ -372,20 +396,148 @@ describe 'manager app test', ->
   it "check user delete", (done) ->
     api.get("/api/user/#{name}").expect(404).end done
 
-  # it "POST /api/group/new", (done) ->
-  #   api.post("/api/group/new").send().expect(200).end(done)
+  it "GET /api/group/:name", (done) ->
+    api.get("/api/group/#{test_group_name}").expect(200).end (err, res) ->
+      assert.equal res.body.data.name, test_group_name
+      done()
 
-  # it "GET /api/group/:name", (done) ->
-  #   done()
+  it "GET /api/group/:name fail", (done) ->
+    n = test_group_name+"hoge"
+    api.get("/api/group/#{n}").expect(404).end done
 
-  # it "PUT /api/group/:name", (done) ->
-  #   api.put("/api/group/#{group_name}").send().expect(200).end(done)
+  it "PUT /api/group/:name", (done) ->
+    return done()
+    api.put("/api/group/#{test_group_name}").send(data).expect(200).end done
 
-  # it "DELETE /api/user/:name", (done) ->
-  #   api.delete("/api/group/#{group_name}").send().expect(200).end(done)
+  it "POST /api/group/:name/member", (done) ->
+    attrs =
+      username: name + '0'
+      password: test_pass + '0'
+    api.post("/api/user/new").send(attrs).expect(200).end (err, res) ->
+      _id = res.body.data._id
+      param =
+        names: [res.body.data.username]
+      setImmediate ->
+        api.post("/api/group/#{test_group_name}/member")
+        .send(param).expect(200).end (err, res) ->
+          throw err if err
+          setImmediate ->
+            api.get("/api/group/#{test_group_name}")
+            .expect(200).end (err, res) ->
+              members = res.body.data.members
+              assert.equal members.length, 1
+              assert.equal members[0]._id, _id
+              done()
 
-  # it "linda-test", (done) ->
-  #   done()
+  it "DELETE /api/group/:name/member", (done) ->
+    n = name + '0'
+    data =
+      names: [n]
+    api.del("/api/group/#{test_group_name}/member").send(data)
+    .expect(200).end (err, res) ->
+      throw err if err
+      setImmediate ->
+        api.get("/api/group/#{test_group_name}")
+        .expect(200).end (err, res) ->
+          members = res.body.data.members
+          assert.equal members.length, 0
+          done()
+
+  it "add group members", (done) ->
+    aFunc = []
+    attrslist = []
+    NUM = 10
+    for i in [1..NUM]
+      attrslist.push
+        username: name + i
+        password: test_pass + i
+      aFunc.push (cb) ->
+        attrs = attrslist.shift()
+        api.post("/api/user/new").send(attrs).expect(200).end (err, res) ->
+          data =  res.body.data
+          _id = data._id
+          setImmediate ->
+            cb null, data.username
+    async.series aFunc, (err, results) ->
+      setImmediate ->
+        param =
+          names: results
+        api.post("/api/group/#{test_group_name}/member")
+        .send(param).expect(200).end (err, res) ->
+          throw err if err
+          setImmediate ->
+            api.get("/api/group/#{test_group_name}")
+            .expect(200).end (err, res) ->
+              members = res.body.data.members
+              done()
+
+  it "DELETE users /api/group/:name/members", (done) ->
+    groupname = test_group_name
+    names = []
+    NUM = 10
+    for i in [1..NUM]
+      names.push name + i
+    data =
+      names: names
+    api.del("/api/group/#{groupname}/member").send(data).expect(200)
+    .end (err, res) ->
+      throw err if err
+      setImmediate ->
+        api.get("/api/group/#{groupname}").expect(200).end (err, res) ->
+          members = res.body.data.members
+          assert.equal members.length, 0
+          done()
+
+  it "add group owner", (done) ->
+    attrs =
+      username: name_owner + '0'
+      password: test_pass + '0'
+    api.post("/api/user/new").send(attrs).expect(200).end (err, res) ->
+      _id = res.body.data._id
+      param =
+        names: [res.body.data.username]
+      setImmediate ->
+        api.post("/api/group/#{test_group_name}/owner")
+        .send(param).expect(200).end (err, res) ->
+          throw err if err
+          setImmediate ->
+            api.get("/api/group/#{test_group_name}")
+            .expect(200).end (err, res) ->
+              owners = res.body.data.owners
+              assert.equal owners.length, 1
+              assert.equal owners[0], _id
+              done()
+
+  it "remove group owner", (done) ->
+    param =
+      names: [name_owner+'0']
+    api.del("/api/group/#{test_group_name}/owner")
+    .send(param).expect(200).end (err, res) ->
+      throw err if err
+      setImmediate ->
+        api.get("/api/group/#{test_group_name}")
+        .expect(200).end (err, res) ->
+          owners = res.body.data.owners
+          assert.equal owners.length, 0
+          done()
+
+  it "add group owners", (done) ->
+    done()
+
+  it "remove group owners", (done) ->
+    done()
+
+  it "modify attribute", (done) ->
+    param =
+      baba: 'takumi'
+    api.put("/api/group/#{test_group_name}").send(param)
+    .expect(200).end (err, res) ->
+      throw err if err
+      setImmediate ->
+        api.get("/api/group/#{test_group_name}").expect(200).end (err, res) ->
+          assert.equal err, null
+          assert.deepEqual res.body.data.attribute, param
+          done()
 
   it 'Session logout', (done) ->
     api.delete('/api/session/logout').expect(200).end done
