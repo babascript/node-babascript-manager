@@ -462,29 +462,6 @@ class User extends BBObject
         group.save (err) ->
           throw err if err
           callback @data
-    #   UserModel.findOne {username: @get("username")}, (err, user) ->
-    #     throw err if err
-    #     return callback false if !user
-
-    # group = _.find @data.groups, (group) ->
-    #   return group.name is name
-    # return callback false if group
-    # group = new Group()
-    # group.find (g) ->
-    #   if !g
-    #     group.name = name
-    #     group.members = []
-    #     group.save (err) ->
-    #       throw err if err
-    #       user.groups.push group
-    #       user.save (err) ->
-    #         throw err if err
-    #         callback group
-    #   else
-    #     user.groups.push g
-    #     user.save (err) ->
-    #       throw err if err
-    #       callback g
 
   removeGroup: (name, callback) ->
     return callback false if !@data or !@username
