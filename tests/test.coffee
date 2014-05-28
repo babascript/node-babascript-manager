@@ -521,12 +521,6 @@ describe 'manager app test', ->
           assert.equal owners.length, 0
           done()
 
-  it "add group owners", (done) ->
-    done()
-
-  it "remove group owners", (done) ->
-    done()
-
   it "modify attribute", (done) ->
     param =
       baba: 'takumi'
@@ -541,3 +535,17 @@ describe 'manager app test', ->
 
   it 'Session logout', (done) ->
     api.delete('/api/session/logout').expect(200).end done
+
+option =
+  linda: "localhost:3030"
+baba = new (require('babascript'))("baba_tests", option)
+client = new (require('babascript-client'))("baba_tests", option)
+
+describe 'babascript websocket test', ->
+
+  it "normal task test", (done) ->
+    client.on "get_task", (result) ->
+      @returnValue true
+    baba.こんばんわ {format: "boolean"}, (result) ->
+      assert.ok result.value
+      done()
