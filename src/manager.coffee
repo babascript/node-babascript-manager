@@ -19,7 +19,6 @@ class BabascriptManager
     throw new Error 'app not found' if !@app?
     @linda = Linda.listen {io: @io, server: @io.server}
     @linda.io.set 'log lebel', 2
-    @linda.io.set 'baba', 'takumi'
     @linda.io.on 'connection', (socket) ->
       socket.on 'disconnect', ->
       socket.on '__linda_write', (data) ->
@@ -239,6 +238,38 @@ class BabascriptManager
           return res.send 404, err if err or !g?
           return res.send 200, g
 
+    # webhook API
+
+    @app.get "/api/webhook/:cid", (req, res, next) =>
+      tuple = req.body.tuple
+      options = req.body.options
+      @linda.tuplespace("baba").write tuple, options
+      @linda.emit "write", tuple
+      res.send 200, tuple
+
+    @app.post "/api/webhook/:cid", (req, res, next) =>
+      tuple = req.body.tuple
+      options = req.body.options
+      @linda.tuplespace("baba").write tuple, options
+      @linda.emit "write", {tuple: tuple, options: options}
+      res.send 200
+
+    # I'm baba
+
+    @app.get "/api/imbaba/:name", (req, res, next) =>
+      name = req.params.name
+      @getGroup {name: name}, (err, group) =>
+        throw err if err
+        if group
+          return res.send 200, group
+        else
+          @getUser name, (err, user) ->
+            throw err if err
+            if user
+              return res.send 200, user
+            else
+              return res.send 404
+    return @
 
   # return status, user
   createUser: (attrs, callback) ->
