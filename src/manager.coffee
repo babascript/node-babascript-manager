@@ -1,5 +1,4 @@
 mongoose = require 'mongoose'
-# mongoose.connect 'mongodb://localhost/babascript/manager'
 _ = require 'underscore'
 Crypto = require 'crypto'
 LindaSocketIO = require('linda-socket.io')
@@ -10,6 +9,8 @@ async = require 'async'
 
 Linda = LindaSocketIO.Linda
 TupleSpace = LindaSocketIO.TupleSpace
+
+console.log mongoose
 
 class BabascriptManager
 
@@ -243,14 +244,17 @@ class BabascriptManager
     @app.get "/api/webhook/:cid", (req, res, next) =>
       tuple = req.body.tuple
       options = req.body.options
-      @linda.tuplespace("baba").write tuple, options
+      name = req.body.tuplespace
+      @linda.tuplespace(name).write tuple, options
+      console.log @linda.tuplespace("baba")
       @linda.emit "write", tuple
       res.send 200, tuple
 
     @app.post "/api/webhook/:cid", (req, res, next) =>
       tuple = req.body.tuple
       options = req.body.options
-      @linda.tuplespace("baba").write tuple, options
+      name = req.body.tuplespace
+      @linda.tuplespace(name).write tuple, options
       @linda.emit "write", {tuple: tuple, options: options}
       res.send 200
 
@@ -261,12 +265,14 @@ class BabascriptManager
       @getGroup {name: name}, (err, group) =>
         throw err if err
         if group
-          return res.send 200, group
+          json =
+            group: group
+          return res.json 200, {group: group}
         else
           @getUser name, (err, user) ->
             throw err if err
             if user
-              return res.send 200, user
+              return res.json 200, {user: user}
             else
               return res.send 404
     return @
