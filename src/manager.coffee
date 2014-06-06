@@ -6,25 +6,84 @@ LocalStrategy = require('passport-local').Strategy
 express = require 'express'
 passport = require 'passport'
 async = require 'async'
+redis = require('redis').createClient()
 
 Linda = LindaSocketIO.Linda
 TupleSpace = LindaSocketIO.TupleSpace
 
-console.log mongoose
-
 class BabascriptManager
 
-  attach: (@io, @app) ->
+  attach: (options = {}) ->
+    @io = options.io
+    @server = options.server || @io.server
+    @app = options.app
     throw new Error 'io not found' if !@io?
-    throw new Error 'server not found' if !@io.server?
+    throw new Error 'server not found' if !@server?
     throw new Error 'app not found' if !@app?
-    @linda = Linda.listen {io: @io, server: @io.server}
-    @linda.io.set 'log lebel', 2
+    @linda = Linda.listen {io: @io, server: @server}
+    @linda.io.sockets.on 'connection', (socket) =>
+      socket.on "__linda_write", (data) =>
+        if data.tuple.type is 'eval'
+          console.log 'task start'
+          name = data.tuplespace
+          createTask = ->
+            task = new TaskModel
+              group: name
+              key: data.tuple.key
+              cid: data.tuple.cid
+              status: 'stock'
+            task.save (err) ->
+              throw err if err
+          UserModel.findOne({username: name}).exec (err, user) ->
+            throw err if err
+            if user?
+              createTask()
+            else
+              GroupModel.findOne({name: name}).exec (err, group) ->
+                throw err if err
+                return if !group?
+                createTask()
+        else if data.tuple.type is 'return'
+          console.log 'task finish'
+          name = data.tuplespace
+          @getUser name, (err, user) ->
+            TaskModel.findOne {cid: data.tuple.cid}, (err, task) ->
+              throw err if err
+              # これ、取得したタスクを更新すれば良いだけじゃね
+              task.status = 'finish'
+              task.finishAt = Date.now()
+              task.text = "#{name} が、 タスク「#{task.key}」を終了."
+              task.save (err) ->
+                throw err if err
+        else if data.tuple.type is 'report' and data.tuple.value is 'taked'
+          console.log 'task execute'
+          name = data.tuplespace
+          tuple = data.tuple.tuple
+          @getUser name, (err, user) ->
+            TaskModel.findOne({cid: tuple.cid}).exec (err, task) ->
+              throw err if err
+              if !task
+                return
+              task.worker = name
+              task.startAt = Date.now()
+              task.status = 'inprocess'
+              task.save (err, task) ->
+              user.set "tasks", task
+              user.isAuthenticate = true
+              task.save (err) ->
+                throw err if err
+                user.save (err) ->
+                  throw err if err
+      socket.on "__linda_take", (data) ->
+        return if data.tuplespace is 'undefined'
+        socket.tuplespace = data.tuplespace
+        redis.set data.tuplespace, 'on'
     @linda.io.on 'connection', (socket) ->
       socket.on 'disconnect', ->
-      socket.on '__linda_write', (data) ->
-      socket.on '__linda_take', (data) ->
-      socket.on '__linda_cancel', (data) ->
+        name = socket.tuplespace
+        if name
+          redis.set name, "off"
+
     passport.serializeUser (data, done) ->
       username = data.username
       password = data.password
@@ -64,7 +123,7 @@ class BabascriptManager
           res.send 200, members
     @app.post '/api/session/login', (req, res, next) ->
       auth(req, res, next)
-    @app.delete '/api/session/logout', (req, res, next) ->
+    @app.del '/api/session/logout', (req, res, next) ->
       delete req.session
       res.send 200
     @app.get '/api/session', (req, res, next) ->
@@ -77,7 +136,6 @@ class BabascriptManager
     @app.get '/api/session/failure', (req,res, next) ->
       res.send 500
     @app.post '/api/user/new', (req, res, next)=>
-      return res.send 404 if !req.session.passport.user?
       username = req.param 'username'
       password = req.param 'password'
       attrs = {username: username, password: password}
@@ -85,24 +143,28 @@ class BabascriptManager
         if err or !user?
           res.send 404
         else
-          res.send 200, user
+          res.send 201, user
     @app.get  '/api/user/:name', (req, res, next) =>
       @getUser req.params.name, (err, user) ->
         if err or !user?
           res.send 404
         else
+          {username, device, groups, attribute, tasks} = user.data
+          u =
+            data:
+              username: username
+              device: device
+              groups: groups
+              attribute: attribute
           if req.session.passport.user?.username is user.data?.username
-            res.json 200, user
-          else
-            u =
-              data:
-                username: user.data.username
-            res.json 200, u
+            password = user.data.password
+            u.data.password = password
+          res.json 200, u
 
     @app.put  '/api/user/:name', (req, res, next) =>
-      return res.send 404 if !req.session.passport.user?
+      # return res.send 404 if !req.session.passport.user?
       username = req.params.name
-      password = req.session.passport.user?.password
+      password = req.session.passport.user?.password || req.body.password
       data = req.body
       param =
         username: username
@@ -110,8 +172,8 @@ class BabascriptManager
       @getUser username, (err, user) ->
         if err or !user?
           res.send 500
-        else if req.session.passport.user.username isnt username
-          res.send 403
+        # else if req.session.passport.user.username isnt username
+        #   res.send 403
         else
           user.authenticate password, (result) ->
             if !result
@@ -144,17 +206,59 @@ class BabascriptManager
                 throw err if err
                 res.send 200
 
-    @app.post '/api/group/new', (req, res, next) ->
-      return res.send 404 if !req.session.passport.user?
-      attrs =
-        owner: req.body.owner
-        name: req.body.name
+    @app.get '/api/user/:name/tasks', (req, res, next) ->
+      name = req.params.name
+      TaskModel.find({worker: name}).sort('-createdAt').exec (err, tasks) ->
+        throw err if err
+        res.json 200, tasks
 
-      @createGroup attrs, (err, group) ->
-        if err or !group?
-          res.send 404
-        else
-          res.send 200, group
+    @app.get '/api/user/:name/attributes', (req, res, next) =>
+      name = req.params.name
+      @getUser name, (err, user) ->
+        throw err if err
+        collection = []
+        o = user.data.toObject()
+        collection.push {key: "username", value: user.data.username}
+        _.each o.attribute, (v, k) ->
+          return if v is null
+          collection.push {key: k, value: v}
+        _.each o.groups, (v, k) ->
+          collection.push {key: "group: #{k}", value: v.name}
+        res.send 200, collection
+
+    @app.put '/api/user/:name/attributes/:key', (req, res, next) =>
+      name = req.params.name
+      {key, value} = req.body
+      @getUser name, (err, user) ->
+        throw err if err
+        user.set key, value
+        user.isAuthenticate = true
+        user.save (err) ->
+          throw err if err
+          res.send 200
+
+    @app.del '/api/user/:name/attributes/:key', (req, res, next) =>
+      name = req.params.name
+      key = req.params.key
+      @getUser name, (err, user) ->
+        throw err if err
+        user.set key, null
+        user.isAuthenticate = true
+        user.save (err) ->
+          throw err if err
+          res.send 200
+
+    @app.post '/api/group/new', (req, res, next) =>
+      # return res.send 404 if !req.session.passport.user?
+      @getUser req.body.owner, (err, user) =>
+        attrs =
+          owner: user
+          name: req.body.name
+        @createGroup attrs, (err, group) ->
+          if !err
+            res.send 404, err
+          else
+            res.send 200, group
 
     @app.get  '/api/group/:name', (req, res, next) =>
       attr =
@@ -184,8 +288,21 @@ class BabascriptManager
       return res.send 404 if !req.session.passport.user?
       res.send 200
 
+    @app.get '/api/group/:name/member', (req, res, next) =>
+      attr =
+        name: req.params.name
+      @getGroup attr, (err, group) ->
+        return res.send 404, err if err or !group?
+        data = []
+        _.each group.data.members, (member) ->
+          console.log member
+          data.push
+            username: member.username
+            attribute: member.attribute
+        res.send 200, data
+
     @app.post '/api/group/:name/member', (req, res, next) =>
-      return res.send 404, "not logined" if !req.session.passport.user?
+      # return res.send 404, "not logined" if !req.session.passport.user?
       attr =
         name: req.params.name
       data = req.body
@@ -221,7 +338,7 @@ class BabascriptManager
         return res.send 404, err if err or !group?
         data =
           groupname: req.params.name
-          ownernames: req.body.names
+          ownernames: req.body.ownernames
         group.addOwner data, (err, g) ->
           return res.send 404, err if err or !g?
           return res.send 200, g
@@ -234,10 +351,22 @@ class BabascriptManager
         return res.send 404, err if err or !group?
         data =
           groupname: req.params.name
-          usernames: req.body.names
+          ownernames: req.body.ownernames
         group.removeOwner data, (err, g) ->
           return res.send 404, err if err or !g?
           return res.send 200, g
+
+    @app.get '/api/group/:name/tasks', (req, res, next) =>
+      attr =
+        name: req.params.name
+      @getGroup attr, (err, group) ->
+        members = _.pluck group.data.members, "username"
+        members = if _.isArray members then members else [members]
+        members.push attr.name
+        TaskModel.find({worker: {$in: members}}).sort('-createdAt')
+        .exec (err, tasks) ->
+          throw err if err
+          res.send 200, tasks
 
     # webhook API
 
@@ -246,7 +375,6 @@ class BabascriptManager
       options = req.body.options
       name = req.body.tuplespace
       @linda.tuplespace(name).write tuple, options
-      console.log @linda.tuplespace("baba")
       @linda.emit "write", tuple
       res.send 200, tuple
 
@@ -275,6 +403,20 @@ class BabascriptManager
               return res.json 200, {user: user}
             else
               return res.send 404
+
+    @app.get "/api/isconnecting/:tuplespace", (req, res, next) ->
+      name = req.params.tuplespace
+      redis.get name, (err, reply) ->
+        throw err if err
+        if reply is "on"
+          res.send 200, true
+        else
+          res.send 200, false
+
+    # Basic View Rendering
+    @app.get "/views/user/:name", (req, res, next) ->
+    @app.get "/views/group/:name", (req, res, next) ->
+    @app.get "/", (req, res, next) ->
     return @
 
   # return status, user
@@ -296,7 +438,7 @@ class BabascriptManager
 
   createGroup: (attrs, callback) ->
     owner = attrs.owner
-    return callback false, null if !owner? or !owner.isAuthenticate
+    # return callback false, null if !owner? or !owner.isAuthenticate
     Group.create attrs, (status, group) ->
       if !group?
         return callback false, null
@@ -342,7 +484,10 @@ class BBObject
     else
       if !@data.attribute?
         @data.attribute = {}
-      @data.attribute[key] = value
+      if _.isArray @data.attribute[key]
+        @data.attribute[key].push value
+      else
+        @data.attribute[key] = value
       @data.markModified 'attribute'
 
   get: (key) ->
@@ -359,7 +504,6 @@ class BBObject
   #   @data.remove (err) ->
   #     callback err
 
-
 class User extends BBObject
   isAuthenticate: false
   username: ''
@@ -370,7 +514,8 @@ class User extends BBObject
   @find = (username, callback) ->
     throw new Error "username is undefined" if !username
     u = new User()
-    UserModel.findOne {username: username}, (err, user) ->
+    UserModel.findOne({username: username}).populate('groups', 'name')
+    .exec (err, user) ->
       throw err if err
       if !user
         error = new Error "user not found"
@@ -447,34 +592,6 @@ class User extends BBObject
       return callback.call @, error
     else
       super callback
-  #   if !@isAuthenticate
-  #     @data = @__data
-  #     return callback.call @, false
-  #   @data.save (err)=>
-  #     if err
-  #       @data = @__data
-  #       callback.call @, err
-  #     else
-  #       @__data = @data
-  #       callback.call @, null
-
-  # set: (name, data) ->
-  #   return false if !data?
-  #   @data[name] = data
-
-  # get: (name) ->
-  #   return @data[name]
-
-  # delete: (username, password, callback) ->
-  #   return callback false if !@isAuthenticate
-  #   p = Crypto.createHash("sha256").update(password).digest("hex")
-  #   UserModel.findOne {username: username, password: p}, (err, user) ->
-  #     throw err if err
-  #     console.log user
-  #     return callback false if !user?
-  #     user.remove()
-  #     user.save (err) ->
-  #       callback true
 
   delete: (callback) ->
     return callback new Error("not authenticated"), false if !@isAuthenticate
@@ -582,7 +699,7 @@ class Group extends BBObject
   @find = (attrs, callback) ->
     name = attrs.name
     throw new Error "name is undefined" if !name
-    GroupModel.findOne({name: attrs.name}).populate('members', 'username')
+    GroupModel.findOne({name: name}).populate('members', 'username attribute')
     .exec (err, group) ->
       throw err if err
       if !group
@@ -628,6 +745,8 @@ class Group extends BBObject
     else
       GroupModel.findOne({name: groupname}).exec (err, group) =>
         throw err if err
+        if !_.isArray(usernames)
+          usernames = [usernames]
         UserModel.find {username: {$in: usernames}}, (err, users) =>
           throw err if err
           sFunc = []
@@ -661,6 +780,9 @@ class Group extends BBObject
     else if !attrs.groupname?
       callback new Error "group name is not undefined", null
     else
+      usernames = attrs.usernames
+      if !_.isArray(usernames)
+        usernames = [usernames]
       UserModel.find {username: {$in: attrs.usernames}}, (err, users) =>
         throw err if err
         GroupModel.findOne({name: attrs.groupname}).exec (err, group) =>
@@ -687,15 +809,15 @@ class Group extends BBObject
     else if !attrs.groupname?
       callback new Error "group's name is not undefined", null
     else
+      ownernames = attrs.ownernames
+      if !_.isArray(ownernames)
+        ownernames = [ownernames]
       UserModel.find {username: {$in: attrs.ownernames}}, (err, users) =>
         throw err if err
         GroupModel.findOne {name: attrs.groupname}, (err, group) =>
           throw err if err
           sFunc = []
           sNode = []
-          console.log "addowner-users"
-          console.log users
-          console.log group
           for user in users
             group.owners.addToSet user._id
             sNode.push user
@@ -720,12 +842,16 @@ class Group extends BBObject
       @_removeOwner attrs, callback
 
   _removeOwner: (attrs, callback) ->
-    if !attrs.usernames?
+    console.log attrs
+    if !attrs.ownernames?
       callback new Error "owner's names is not undefined", null
     else if !attrs.groupname?
       callback new Error "group name is not undefined", null
     else
-      UserModel.find {username: {$in: attrs.usernames}}, (err, users) =>
+      ownernames = attrs.ownernames
+      if !_.isArray(ownernames)
+        ownernames = [ownernames]
+      UserModel.find {username: {$in: ownernames}}, (err, users) =>
         throw err if err
         GroupModel.findOne({name: attrs.groupname}).exec (err, group) =>
           throw err if err
@@ -759,6 +885,9 @@ UserModel = mongoose.model "user", new mongoose.Schema
   username: type: String
   password: type: String
   attribute: {}
+  createdAt: type: Date
+  updatedAt: type: Date
+  tasks: type: [{type: mongoose.Schema.Types.ObjectId, ref: "task"}]
   device: type: {type: mongoose.Schema.Types.ObjectId, ref: "device"}
   groups: type: [{type: mongoose.Schema.Types.ObjectId, ref: "group"}]
 
@@ -767,6 +896,18 @@ GroupModel = mongoose.model "group", new mongoose.Schema
   attribute: type: {}
   owners: type: [{type: mongoose.Schema.Types.ObjectId, ref: "user"}]
   members: type: [{type: mongoose.Schema.Types.ObjectId, ref: "user"}]
+
+TaskModel = mongoose.model "task", new mongoose.Schema
+  text: type: String
+  status: type: String
+  worker: type: String
+  cid: type: String
+  key: type: String
+  group: type: String
+  startAt: {type: Date, default: ""}
+  finishAt: {type: Date, default: ""}
+  createdAt: {type: Date, default: Date.now}
+
 
 DeviceModel = mongoose.model "device", new mongoose.Schema
   uuid: type: String

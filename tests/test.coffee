@@ -222,7 +222,7 @@ describe "manager program test", ->
       assert.equal err, null
       attrs =
         groupname: test_group_name
-        usernames: [test_name]
+        ownernames: [test_name]
       group.removeOwner attrs, (err, group) ->
         assert.equal err, null
         assert.ok group instanceof Group
@@ -256,16 +256,16 @@ app.use (require 'method-override')()
 #   return next null
 app.use require('cookie-parser')()
 
-# app.use (req, res, next) ->
-#   headers = 'Content-Type, Authorization, Content-Length,'
-#   headers += 'X-Requested-With, Origin'
-#   methods = 'POST, PUT, GET, DELETE, OPTIONS'
-#   res.setHeader 'Access-Control-Allow-Origin', '*'
-#   res.setHeader 'Access-Control-Allow-Credentials', true
-#   res.setHeader 'Access-Control-Allow-Methods', methods
-#   res.setHeader 'Access-Control-Request-Method', methods
-#   res.setHeader 'Access-Control-Allow-Headers', headers
-#   next()
+app.use (req, res, next) ->
+  headers = 'Content-Type, Authorization, Content-Length,'
+  headers += 'X-Requested-With, Origin'
+  methods = 'POST, PUT, GET, DELETE, OPTIONS'
+  res.setHeader 'Access-Control-Allow-Origin', '*'
+  res.setHeader 'Access-Control-Allow-Credentials', true
+  res.setHeader 'Access-Control-Allow-Methods', methods
+  res.setHeader 'Access-Control-Request-Method', methods
+  res.setHeader 'Access-Control-Allow-Headers', headers
+  next()
 
 app.use session
   secret: 'session:hogefuga'
@@ -306,7 +306,7 @@ describe 'manager app test', ->
     done()
 
   it 'attach', (done) ->
-    Manager.attach io, app
+    Manager.attach {io: io, app: app, server: io.server}
     # assert.ok io instanceof Socket.IO.clien
     # assert.ok app instanceof express
     api = supertest.agent app
@@ -341,7 +341,7 @@ describe 'manager app test', ->
 
   it 'POST /api/user/new', (done) ->
     data = {username: name+'9898', password: test_pass+'9898'}
-    api.post('/api/user/new').send(data).expect(200).end done
+    api.post('/api/user/new').send(data).expect(201).end done
 
   it 'POST /api/user/new fail', (done) ->
     data = {usernme: name}
@@ -495,7 +495,7 @@ describe 'manager app test', ->
     api.post("/api/user/new").send(attrs).expect(200).end (err, res) ->
       _id = res.body.data._id
       param =
-        names: [res.body.data.username]
+        ownernames: [res.body.data.username]
       setImmediate ->
         api.post("/api/group/#{test_group_name}/owner")
         .send(param).expect(200).end (err, res) ->
@@ -510,7 +510,7 @@ describe 'manager app test', ->
 
   it "remove group owner", (done) ->
     param =
-      names: [name_owner+'0']
+      ownernames: [name_owner+'0']
     api.del("/api/group/#{test_group_name}/owner")
     .send(param).expect(200).end (err, res) ->
       throw err if err
@@ -545,6 +545,7 @@ describe 'babascript websocket test', ->
 
   it "normal task test", (done) ->
     client.on "get_task", (result) ->
+      console.log result
       @returnValue true
     baba.こんばんわ {format: "boolean"}, (result) ->
       assert.ok result.value
