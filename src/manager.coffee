@@ -21,8 +21,25 @@ class BabascriptManager
     throw new Error 'server not found' if !@server?
     throw new Error 'app not found' if !@app?
     @linda = Linda.listen {io: @io, server: @server}
+    @linda.io.set 'log lebel', 2
     @linda.io.sockets.on 'connection', (socket) =>
       socket.on "__linda_write", (data) =>
+        if data.tuple.type is 'userdata-write'
+          console.log 'get user data write'
+          name = data.tuplespace
+          {key, value} = data.tuple
+          @getUser name, (err, user) =>
+            throw err if err
+            user.set key, value
+            user.isAuthenticate = true
+            user.save (err) =>
+              throw err if err
+              tuple =
+                type: 'userdata'
+                username: name
+                key: key
+                value: value
+              @linda.tuplespace(name).write(tuple)
         if data.tuple.type is 'eval'
           console.log 'task start'
           name = data.tuplespace
@@ -49,7 +66,6 @@ class BabascriptManager
           @getUser name, (err, user) ->
             TaskModel.findOne {cid: data.tuple.cid}, (err, task) ->
               throw err if err
-              # これ、取得したタスクを更新すれば良いだけじゃね
               task.status = 'finish'
               task.finishAt = Date.now()
               task.text = "#{name} が、 タスク「#{task.key}」を終了."
@@ -74,15 +90,27 @@ class BabascriptManager
                 throw err if err
                 user.save (err) ->
                   throw err if err
-      socket.on "__linda_take", (data) ->
+      socket.on "__linda_take", (data) =>
         return if data.tuplespace is 'undefined'
         socket.tuplespace = data.tuplespace
         redis.set data.tuplespace, 'on'
-    @linda.io.on 'connection', (socket) ->
-      socket.on 'disconnect', ->
+        t =
+          type: 'userdata'
+          key: 'status'
+          value: 'on'
+          tuplespace: data.tuplespace
+        @linda.tuplespace(data.tuplespace).write t
+    @linda.io.on 'connection', (socket) =>
+      socket.on 'disconnect', =>
         name = socket.tuplespace
         if name
           redis.set name, "off"
+          t =
+            type: 'userdata'
+            key: 'status'
+            value: 'off'
+            tuplespace: name
+          @linda.tuplespace(name).write t
 
     passport.serializeUser (data, done) ->
       username = data.username
@@ -169,13 +197,13 @@ class BabascriptManager
       param =
         username: username
         password: password
-      @getUser username, (err, user) ->
+      @getUser username, (err, user) =>
         if err or !user?
           res.send 500
         # else if req.session.passport.user.username isnt username
         #   res.send 403
         else
-          user.authenticate password, (result) ->
+          user.authenticate password, (result) =>
             if !result
               res.send 404
             else
@@ -184,9 +212,11 @@ class BabascriptManager
                   value = Crypto.createHash("sha256")
                   .update(value).digest("hex")
                 user.set key, value
-              user.save (err) ->
+              user.save (err) =>
                 throw err if err
                 res.send 200
+                @linda.tuplespace(username)
+                .write(user.data)
 
     @app.del '/api/user/:name', (req, res, next) =>
       return res.send 404 if !req.session.passport.user?
@@ -208,7 +238,8 @@ class BabascriptManager
 
     @app.get '/api/user/:name/tasks', (req, res, next) ->
       name = req.params.name
-      TaskModel.find({worker: name}).sort('-createdAt').exec (err, tasks) ->
+      TaskModel.find({worker: name}).limit(5)
+      .sort('-createdAt').exec (err, tasks) ->
         throw err if err
         res.json 200, tasks
 
@@ -229,13 +260,19 @@ class BabascriptManager
     @app.put '/api/user/:name/attributes/:key', (req, res, next) =>
       name = req.params.name
       {key, value} = req.body
-      @getUser name, (err, user) ->
+      @getUser name, (err, user) =>
         throw err if err
         user.set key, value
         user.isAuthenticate = true
-        user.save (err) ->
+        user.save (err) =>
           throw err if err
           res.send 200
+          tuple =
+            type: 'userdata'
+            username: name
+            key: key
+            value: value
+          @linda.tuplespace(name).write(tuple)
 
     @app.del '/api/user/:name/attributes/:key', (req, res, next) =>
       name = req.params.name
@@ -310,8 +347,10 @@ class BabascriptManager
         return res.send 404, err if err or !group?
         data =
           groupname: req.params.name
-          usernames: req.body.names
+          usernames: data.names || data.username
         group.addMember data, (err, g) ->
+          console.log err
+          console.log g
           return res.send 404, err if err or !g?
           return res.send 200, g
 
@@ -749,6 +788,8 @@ class Group extends BBObject
           usernames = [usernames]
         UserModel.find {username: {$in: usernames}}, (err, users) =>
           throw err if err
+          if !users? or users.length is 0
+            return callback.call @, new Error "user not foud", null
           sFunc = []
           sNode = []
           for user in users
@@ -900,14 +941,13 @@ GroupModel = mongoose.model "group", new mongoose.Schema
 TaskModel = mongoose.model "task", new mongoose.Schema
   text: type: String
   status: type: String
-  worker: type: String
+  worker: {type: String, index: true}
   cid: type: String
   key: type: String
   group: type: String
   startAt: {type: Date, default: ""}
   finishAt: {type: Date, default: ""}
   createdAt: {type: Date, default: Date.now}
-
 
 DeviceModel = mongoose.model "device", new mongoose.Schema
   uuid: type: String
