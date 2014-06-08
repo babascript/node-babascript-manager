@@ -1,17 +1,25 @@
 'use strict'
-
+path = require 'path'
 coffeelint = require 'coffeelint'
 {reporter} = require 'coffeelint-stylish'
 
 module.exports = (grunt) ->
 
   grunt.loadNpmTasks 'grunt-contrib-coffee'
+  grunt.loadNpmTasks 'grunt-express'
+  grunt.loadNpmTasks 'grunt-contrib-connect'
   grunt.loadNpmTasks 'grunt-contrib-watch'
   grunt.loadNpmTasks 'grunt-simple-mocha'
   grunt.loadNpmTasks 'grunt-notify'
 
   grunt.registerTask 'test',    [ 'coffeelint', 'coffee', 'simplemocha' ]
   grunt.registerTask 'default', [ 'test', 'watch' ]
+  grunt.registerTask 'serve', [ 'coffeelint', 'coffee', 'simplemocha', 'express', 'watch']
+
+  grunt.registerTask 'server', ->
+    app = require direquire 'tests', 'app'
+
+
   grunt.registerMultiTask 'coffeelint', 'CoffeeLint', ->
     count = e: 0, w: 0
     options = @options()
@@ -84,6 +92,16 @@ module.exports = (grunt) ->
           ext: '.js'
         }]
 
+    express:
+      server:
+        myServer:
+          server: ->
+            console.log path.resolve 'tests', 'app'
+            path.resolve 'tests', 'app'
+      options:
+        port: 9090
+        hostname: 'localhost'
+
     simplemocha:
       options:
         ui: 'bdd'
@@ -100,3 +118,9 @@ module.exports = (grunt) ->
         files: [ 'src/**/*.coffee', 'tests/**/*.coffee' ]
         tasks: [ 'test' ]
 
+    connect:
+      server:
+        options:
+          port: 9090
+          hostname: 'localhost'
+          livereload: true
