@@ -17,11 +17,17 @@ for env in envs when fs.existsSync env
 app = require path.resolve 'tests', 'app'
 
 describe 'user test', ->
-  name = "baba"
+  name = "baba_test"
   pass = 'takumi'
 
   before (done) ->
     done()
+
+  after (done) ->
+    console.log 'after'
+    console.log Manager.server
+    done()
+    # Manager.server.close()
 
   it 'success new user', (done) ->
     data =
@@ -56,7 +62,7 @@ describe 'user test', ->
     request(app).del("/api/user/#{name}").send(data).expect(200).end done
 
 describe 'group test', ->
-  group_name = 'masuilab'
+  group_name = "masuilab_test_#{Date.now()}"
   user_name  = "baba_#{Date.now()}"
   pass = 'takumi'
   before (done) ->
@@ -86,7 +92,8 @@ describe 'group test', ->
     request(app).post("/api/group/new").send(data).expect(201).end done
 
   it 'get group', (done) ->
-    request(app).get("/api/group/#{group_name}").expect(200).end (err, res) ->
+    request(app).get("/api/group/#{group_name}")
+    .expect(200).end (err, res) ->
       assert.equal group_name, res.body.groupname
       done()
 
@@ -102,19 +109,17 @@ describe 'group test', ->
   it 'get member', (done) ->
     request(app).get("/api/group/#{group_name}/member")
     .expect(200).end (err, res) ->
-      assert.equal res.body.groupname, group_name
-      assert.equal res.body.members.length, 1
-      assert.equal res.body.members[0].username, "#{user_name}_0"
+      members = res.body
+      assert.equal members.length, 1
+      assert.equal members[0].username, "#{user_name}_0"
       done()
 
   it 'remove member', (done) ->
     data =
       members: "#{user_name}_0"
     request(app).del("/api/group/#{group_name}/member").send(data)
-    .expect(200).end (err, res) ->
-      assert.equal res.body.members.length, 0
-      assert.equal res.body.groupname, group_name
-      done()
+    .expect(200).end done
+
 
   it 'add members group', (done) ->
     data =
@@ -130,8 +135,8 @@ describe 'group test', ->
   it 'get member', (done) ->
     request(app).get("/api/group/#{group_name}/member")
     .expect(200).end (err, res) ->
-      assert.equal res.body.groupname, group_name
-      assert.equal res.body.members.length, 9
+      members = res.body
+      assert.equal members.length, 9
       done()
 
   it 'remove members', (done) ->
@@ -140,10 +145,8 @@ describe 'group test', ->
     for i in [1..9]
       data.members.push "#{user_name}_#{i}"
     request(app).del("/api/group/#{group_name}/member").send(data)
-    .expect(200).end (err, res) ->
-      assert.equal res.body.members.length, 0
-      assert.equal res.body.groupname, group_name
-      done()
+    .expect(200).end done
+
 
   it 'delete group', (done) ->
     request(app).del("/api/group/#{group_name}").expect(200).end done

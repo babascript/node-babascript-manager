@@ -40,8 +40,11 @@ UserSchema.methods.comparePassword = (candidatePass, cb) ->
   bcrypt.compare candidatePass, @password, (err, isMatch) ->
     return cb(err) if err
     cb null, isMatch
+
 UserSchema.pre 'save', (next) ->
   user = @
+  if user.isModified("attribute") then @attrChange = true
+
   if !user.isModified('password') then next()
 
   bcrypt.genSalt 10, (err, salt) ->
@@ -50,6 +53,8 @@ UserSchema.pre 'save', (next) ->
       # override the cleartext password with hashed password
       user.password = hash
       next()
+UserSchema.post "save", (next) ->
+  user = @
 
 GroupSchema = new Schema
   groupname: type: String
@@ -60,7 +65,7 @@ GroupSchema = new Schema
 TaskSchema = new Schema
   text: type: String
   status: type: String
-  worker: {type: String, index: true}
+  worker: type: String, default: ""
   cid: type: String
   key: type: String
   group: type: String

@@ -39,7 +39,7 @@ app.use (req, res, next) ->
 server = app.listen(9080)
 io = require('socket.io').listen server
 manager = require(path.resolve 'src', 'manager')
-manager.attach {io: io, app: app, server: server}
+manager.attach {io: io, app: app, server: server, secure: true}
 
 # (require path.resolve 'src/events', 'user')(app)
 # (require path.resolve 'src/events', 'group')(app)
