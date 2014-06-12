@@ -14,7 +14,7 @@ for env in envs when fs.existsSync env
   process.env[k] = v for k, v of env
   break
 
-app = require path.resolve 'tests', 'app'
+app = require path.resolve 'tests', 'testapp'
 
 describe 'user test', ->
   name = "baba_test"

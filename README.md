@@ -1,21 +1,15 @@
-# nodeinit
+# Babascript Manager
 
-![](https://travis-ci.org/geta6/nodeinit.png?branch=master)
+# requirements
 
-node_moduleを開発し始めるためのベース
+- Node.js
+- express
+- Socket.IO
+- MongoDB
+- Redis
 
-# usage
+# for Heroku
 
-    $ git clone https://github.com/geta6/nodeinit
-    $ cd nodeinit
-    $ npm i -g grunt-cli
-    $ npm i
-    $ grunt
-
-# tasks
-
-* lint coffee
-* build coffee (`src` to `lib`, recursive)
-* mocha test (`tests/test.coffee`)
-* watching file changes
-* failure notification
+heroku addons:add mongohq:free
+heroku addons:add redistogo:nano
+heroku labs:enable websockets

@@ -1,17 +1,12 @@
 mongoose = require 'mongoose'
-_ = require 'underscore'
-Crypto = require 'crypto'
 LindaSocketIO = require('linda-socket.io')
 LocalStrategy = require('passport-local').Strategy
 express = require 'express'
 passport = require 'passport'
-async = require 'async'
-redis = require('redis').createClient()
 direquire = require 'direquire'
 path = require 'path'
 
-Linda = LindaSocketIO.Linda
-TupleSpace = LindaSocketIO.TupleSpace
+{Linda, TupleSpace} = LindaSocketIO
 
 class BabascriptManager
 
