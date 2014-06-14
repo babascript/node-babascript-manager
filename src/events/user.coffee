@@ -1,8 +1,11 @@
 _ = require 'lodash'
+hat = require 'hat'
 
 module.exports = (app) ->
   {User} = app.get "models"
   {Task} = app.get "models"
+  {Device} = app.get "models"
+  {Notification} = app.get 'helper'
   linda = app.get "linda"
 
   app.post "/api/user/new", (req, res, next) ->
@@ -16,6 +19,7 @@ module.exports = (app) ->
         user = new User
           username: username
           password: password
+          token: hat()
         user.save (err) ->
           if err
             res.send 404
@@ -126,3 +130,57 @@ module.exports = (app) ->
         res.send 400
       else
         res.send 200, users
+
+  app.put "/api/user/:name/token", (req, res, next) ->
+    User.findOne {username: req.params.name}, (err, user) ->
+      if err
+        res.send 400
+      else
+        user.token = hat()
+        user.save (err) ->
+          if err
+            res.send 400
+          else
+            res.send 200, {token: user.token, username: user.username}
+
+  app.get "/api/user/:name/device", (req, res, next) ->
+    User.findOne({username: req.params.name}).populate("device")
+    .exec (err, user) ->
+      if err
+        res.send 400
+      else
+        res.send 200, user
+
+  app.post "/api/user/:name/device", (req, res, next) ->
+    token = req.body.token
+    type = req.body.type
+    User.findOne {username: req.params.name}, (err, user) ->
+      if err
+        res.send 400
+      else
+        device = new Device()
+        device.token = req.body.token
+        device.type = req.body.type
+        device.save (err) ->
+          if err
+            res.send 400
+          else
+            console.log device
+            user.device = device._id
+            user.devicetoken = token
+            user.devicetype = type
+            user.save (err) ->
+              if err
+                res.send 400
+              else
+                res.send 200, device
+
+  app.get "/api/user/:name/notify", (req, res, next) ->
+    User.findOne {username: req.params.name}, (err, user) ->
+      if err
+        res.send 400
+      else
+        token = user.devicetoken
+        type = user.devicetype
+        Notification.sendNotification type, token, "こんばんわー！！"
+        res.send 200

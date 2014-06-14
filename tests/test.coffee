@@ -3,6 +3,8 @@ path = require 'path'
 assert = require 'assert'
 request = require 'supertest'
 Manager = require path.resolve 'src', 'manager'
+Linda = require 'linda-socket.io'
+SocketIOClient = require 'socket.io-client'
 
 envs = [
   (path.resolve 'config', 'env.json')
@@ -151,4 +153,11 @@ describe 'group test', ->
   it 'delete group', (done) ->
     request(app).del("/api/group/#{group_name}").expect(200).end done
 
-describe 'websocket', ->
+# describe 'websocket', ->
+#
+#   it "virtual client test", (done) ->
+#     linda = app.get 'linda'
+#     io = SocketIOClient.connect "http://localhost:9080/"
+#     io.once "connection", ->
+#       console.log 'ok'
+#       done()

@@ -34,7 +34,7 @@ app.use (req, res, next) ->
   app.locals.pkg = pkg
   return next null
 
-server = app.listen process.env.PORT || 1217
+server = app.listen process.env.PORT || 9080
 io = require('socket.io').listen server
 manager = require(path.resolve 'src', 'manager')
 manager.attach {io: io, app: app, server: server, secure: true}

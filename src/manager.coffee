@@ -2,9 +2,12 @@ mongoose = require 'mongoose'
 LindaSocketIO = require('linda-socket.io')
 LocalStrategy = require('passport-local').Strategy
 express = require 'express'
+cookie = require 'cookie'
+session = require 'express-session'
 passport = require 'passport'
 direquire = require 'direquire'
 path = require 'path'
+pkg = require path.resolve 'package.json'
 
 {Linda, TupleSpace} = LindaSocketIO
 
@@ -34,19 +37,62 @@ class BabascriptManager
       res.setHeader 'Access-Control-Allow-Headers', headers
       next()
 
-    @app.set 'events', direquire path.resolve 'src', 'events'
-    @app.set 'models', direquire path.resolve 'src', 'models'
-    @app.set 'helper', direquire path.resolve 'src', 'helper'
+    RedisStore = (require 'connect-redis')(session)
+    @app.use session
+      store: new RedisStore {prefix: "sess:#{pkg.name}:"}
+      secret: 'keyboard cat'
+      cookie: expires: no
+
+    Events =
+      Group: require("./events/group")
+      Session: require "./events/session"
+      User: require "./events/user"
+      Websocket: require "./events/websocket"
+    Models = require "./models/model"
+    Helper =
+      Notification: require "./helper/notification"
+
+    @app.set 'events', Events
+    @app.set 'models', Models
+    @app.set 'helper', Helper
     @app.set 'linda', @linda
 
-    (require path.resolve 'src/events', 'user')(@app)
-    (require path.resolve 'src/events', 'group')(@app)
+    Events.Session @app
+    Events.User @app
+    Events.Group @app
+    Events.Websocket @app
 
-    (require path.resolve 'src/events', 'websocket')(@app)
-
-    if options?.secure? is true
-      console.log 'set passport'
-      (require path.resolve 'src/events', 'session')(@app)
+    if options.secure?
+      @io.configure =>
+        @io.set "authorization", (handshakeData, callback) ->
+          console.log 'authorization'
+          console.log handshakeData
+          token = handshakeData.query?.token
+          if !token?
+            return callback 'error', false
+          else
+            Models.User.findOne {token: token}, (err, user) ->
+              throw err if err
+              console.log user
+              if user
+                callback null, true
+              else
+                callback 'token not found', false
+# node-client側はどうしよ？
+# if handshakeData.headers['user-agent'] is 'node-XMLHttpRequest'
+#   return callback null, true
+# if handshakeData.headers.cookie?
+#   data = handshakeData.headers.cookie
+#   sessionID = cookie.parse(data)['connect.sid']
+#   PREFIX_LENGTH = 2
+#   SESSION_LENGTH = 24
+#   sid = sessionID.slice PREFIX_LENGTH, PREFIX_LENGTH + SESSION_LENGTH
+#   redisStore.get sid, (err, data) ->
+#     return callback 'error', false if err
+#     handshakeData.session = data
+#     callback null, true
+# else
+#   callback 'error', false
 
 
 module.exports = new BabascriptManager()

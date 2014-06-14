@@ -32,6 +32,9 @@ UserSchema = new Schema
   attribute: type: Schema.Types.Mixed, default: {}
   createdAt: type: Date
   updatedAt: type: Date
+  token: type: String
+  devicetype: type: String
+  devicetoken: type: String
   tasks: type: [{type: mongoose.Schema.Types.ObjectId, ref: "task"}]
   device: type: {type: mongoose.Schema.Types.ObjectId, ref: "device"}
   groups: type: [{type: mongoose.Schema.Types.ObjectId, ref: "group"}]
@@ -80,10 +83,15 @@ DeviceSchema = new Schema
   endpoint: type: String
   owner: type: {type: mongoose.Schema.Types.ObjectId, ref: "user"}
 
+TokenSchema = new Schema
+  token: type: String, required: true
+  createdAt: type: Date, default: Date.now
+
 module.exports =
   User: mongoose.model "user", UserSchema
   Group: mongoose.model "group", GroupSchema
   Team: mongoose.model 'team', TeamSchema
   Task: mongoose.model "task", TaskSchema
   Device: mongoose.model "device", DeviceSchema
+  Token: mongoose.model 'token', TokenSchema
   Object: mongoose.model 'object', ObjectSchema

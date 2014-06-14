@@ -15,6 +15,7 @@ module.exports = (grunt) ->
   grunt.registerTask 'test',    [ 'coffeelint', 'coffee', 'simplemocha' ]
   grunt.registerTask 'default', [ 'test', 'watch' ]
   grunt.registerTask 'serve', [ 'coffeelint', 'coffee', 'simplemocha', 'express', 'watch']
+  grunt.registerTask 'reload', [ 'coffeelint', 'coffee', 'watch']
 
   grunt.registerTask 'server', ->
     app = require direquire 'tests', 'app'
