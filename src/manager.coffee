@@ -68,12 +68,14 @@ class BabascriptManager
           console.log 'authorization'
           console.log handshakeData
           token = handshakeData.query?.token
+          if handshakeData.headers['user-agent'] is 'node-XMLHttpRequest'
+            return callback null, true
           if !token?
             return callback 'error', false
           else
             Models.User.findOne {token: token}, (err, user) ->
               throw err if err
-              console.log user
+              handshakeData.user = user
               if user
                 callback null, true
               else
