@@ -10,18 +10,16 @@ module.exports = (app) ->
     console.log 'connection!!!'
     session = socket.handshake.session
     user = socket.handshake.user
+    console.log user
+    # if !socket.handshake.actor
+
     if socket.handshake?.headers.origin is managerClientAddress
-      console.log "I'm manager client"
       # Actorとかには追加しない
-    else if user.username?
-      console.log "I'm actor client"
+    else if user?.username?
       username = user.username
-      console.log username
       if _.contains actors, username
-        console.log 'already connecting'
         socket.disconnect()
       else
-        console.log 'new connection'
         actors.push username
       # 既にクライアントとして接続中であれば接続を許可しない
       # 既にプログラムで実行中であれば、接続を拒否する、とか。
@@ -31,42 +29,17 @@ module.exports = (app) ->
         when "eval" then userTaskStart data
         when "report" then userTaskExecute data
         when "return" then userTaskFinish data
-    socket.on "__linda_take", (data) ->
-      # return if data.tuplespace is 'undefined'
-      # socket.tuplespace = data.tuplespace
-      # redis.set data.tuplespace, "agent app"
-      # t =
-      #   type: 'userdata'
-      #   key: 'status'
-      #   value: 'agent app'
-      #   tuplespace: data.tuplespace
-      # linda.tuplespace(data.tuplespace).write t
     socket.on "disconnect", (data) ->
       # Actors から削除する仕組み
       console.log 'disconnect!'
       # username = socket.handshake?.session?.passport?.user.username
       username = socket.handshake?.user?.username
-      console.log username
       if username
         for name, i in actors
-          console.log name
-          delete actors[i] if name is username
-        console.log actors
-      # name = socket?.tuplespace
-      # if name
-      #   redis.set name, 'off'
-      #   t =
-      #     type: 'userdata'
-      #     key: 'status'
-      #     value: 'off'
-      #     tuplespace: name
-      #   linda.tuplespace(name).write t
+          actors.splice i, 1 if name is username
 
   userDataReceiver = (data) ->
-    # console.log 'data receive'
-    # console.log data
     name = data.tuplespace
-    # console.log name
     {key, value} = data.tuple
     User.findOne {username: name}, (err, user) ->
       throw err if err
@@ -81,7 +54,6 @@ module.exports = (app) ->
           value: value
         linda.tuplespace(name).write tuple
   userTaskStart = (data) ->
-    # virtual client のせいで、evalが2回起きてる？
     console.log 'task start'
     console.log data
     name = data.tuplespace
@@ -112,14 +84,12 @@ module.exports = (app) ->
   userTaskExecute = (data) ->
     console.log 'task execute'
     console.log data
-    # console.log data.tuple.tuple
     name = data.tuplespace
     tuple = data.tuple.tuple
     User.findOne {username: name}, (err, user) ->
       throw err if err
       Task.findOne {cid: tuple.cid}, (err, task) ->
         throw err if err
-        console.log task
         if !task
           return
         task.worker = name
@@ -138,6 +108,7 @@ module.exports = (app) ->
       throw err if err
       Task.findOne {cid: data.tuple.cid}, (err, task) ->
         throw err if err
+        task.value = data.tuple.value
         task.status = 'finish'
         task.finishAt = Date.now()
         task.text = "#{name} が、 タスク「#{task.key}」を終了."

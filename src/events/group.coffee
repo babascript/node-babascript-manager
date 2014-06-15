@@ -7,6 +7,7 @@ module.exports = (app) ->
 
   app.post "/api/group/new", (req, res, next) ->
     name = req.body.name
+    res.send 404 if !name?
     Group.findOne {groupname: name}, (err, group) ->
       if err or group?
         res.send 404, 'already exist'

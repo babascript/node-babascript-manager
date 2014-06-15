@@ -69,6 +69,9 @@ class BabascriptManager
           console.log handshakeData
           token = handshakeData.query?.token
           if handshakeData.headers['user-agent'] is 'node-XMLHttpRequest'
+            handshakeData.actor = false
+            # handshakeData.user =
+            #   username:
             return callback null, true
           if !token?
             return callback 'error', false

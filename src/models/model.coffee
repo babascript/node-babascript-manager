@@ -68,10 +68,11 @@ GroupSchema = new Schema
 TaskSchema = new Schema
   text: type: String
   status: type: String
-  worker: type: String, default: ""
+  worker: type: String, default: "-"
   cid: type: String
   key: type: String
   group: type: String
+  value: type: String, default: "-"
   startAt: {type: Date, default: ""}
   finishAt: {type: Date, default: ""}
   createdAt: {type: Date, default: Date.now}
