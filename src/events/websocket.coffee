@@ -9,12 +9,13 @@ module.exports = (app) ->
   linda.io.sockets.on "connection", (socket) ->
     console.log 'connection!!!'
     session = socket.handshake.session
+    user = socket.handshake.user
     if socket.handshake?.headers.origin is managerClientAddress
       console.log "I'm manager client"
       # Actorとかには追加しない
-    else if session?.passport?.user.username
+    else if user.username?
       console.log "I'm actor client"
-      username = session.passport.user.username
+      username = user.username
       console.log username
       if _.contains actors, username
         console.log 'already connecting'
@@ -43,7 +44,8 @@ module.exports = (app) ->
     socket.on "disconnect", (data) ->
       # Actors から削除する仕組み
       console.log 'disconnect!'
-      username = socket.handshake?.session?.passport?.user.username
+      # username = socket.handshake?.session?.passport?.user.username
+      username = socket.handshake?.user?.username
       console.log username
       if username
         for name, i in actors
