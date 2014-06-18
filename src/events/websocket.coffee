@@ -13,14 +13,14 @@ module.exports = (app) ->
     console.log user
     # if !socket.handshake.actor
 
-    if socket.handshake?.headers.origin is managerClientAddress
+    # if socket.handshake?.headers.origin is managerClientAddress
       # Actorとかには追加しない
-    else if user?.username?
-      username = user.username
-      if _.contains actors, username
-        socket.disconnect()
-      else
-        actors.push username
+    # else if user?.username?
+    #   username = user.username
+    #   if _.contains actors, username
+    #     socket.disconnect()
+    #   else
+    #     actors.push username
       # 既にクライアントとして接続中であれば接続を許可しない
       # 既にプログラムで実行中であれば、接続を拒否する、とか。
     socket.on "__linda_write", (data) ->

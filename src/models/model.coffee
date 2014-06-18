@@ -88,11 +88,14 @@ TokenSchema = new Schema
   token: type: String, required: true
   createdAt: type: Date, default: Date.now
 
+TaskLogSchema = new Schema
+
 module.exports =
   User: mongoose.model "user", UserSchema
   Group: mongoose.model "group", GroupSchema
   Team: mongoose.model 'team', TeamSchema
   Task: mongoose.model "task", TaskSchema
+  TaskLog: mongoose.model 'tasklogs', TaskLogSchema
   Device: mongoose.model "device", DeviceSchema
   Token: mongoose.model 'token', TokenSchema
   Object: mongoose.model 'object', ObjectSchema

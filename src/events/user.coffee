@@ -5,6 +5,7 @@ module.exports = (app) ->
   {User} = app.get "models"
   {Task} = app.get "models"
   {Device} = app.get "models"
+  {TaskLog} = app.get "models"
   {Notification} = app.get 'helper'
   linda = app.get "linda"
 
@@ -184,3 +185,9 @@ module.exports = (app) ->
         type = user.devicetype
         Notification.sendNotification type, token, "こんばんわー！！"
         res.send 200
+
+  app.get "/api/user/:name/tasklogs", (req, res, next) ->
+    name = req.params.name
+    TaskLog.find().or([{worker: name}, name: name]).exec (err, task) ->
+      console.log task
+      res.send task

@@ -28,11 +28,13 @@ class BabascriptManager
 
     @app.use (req, res, next) ->
       headers = 'Content-Type, Authorization, Content-Length,'
-      headers += 'X-Requested-With, Origin'
+      headers += 'X-Requested-With, Origin, Accept-Encoding'
       methods = 'POST, PUT, GET, DELETE, OPTIONS'
       res.setHeader 'Access-Control-Allow-Origin', req.headers.origin
       res.setHeader 'Access-Control-Allow-Credentials', true
       res.setHeader 'Access-Control-Allow-Methods', methods
+      res.setHeader 'Access-Control-Allow-Headers', "*"
+      res.setHeader 'Access-Control-Allow-Accept-Encoding', "gzip"
       res.setHeader 'Access-Control-Request-Method', methods
       res.setHeader 'Access-Control-Allow-Headers', headers
       next()
