@@ -8,8 +8,4 @@
 - MongoDB
 - Redis
 
-# for Heroku
-
-heroku addons:add mongohq:free
-heroku addons:add redistogo:nano
-heroku labs:enable websockets
+# TODO manual...
