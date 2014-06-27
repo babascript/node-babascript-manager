@@ -1,6 +1,6 @@
 {
   "name": "babascript-manager",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "babascript manager, human resouces managemnt system",
   "main": "lib/manager.js",
   "repository": {
