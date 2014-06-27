@@ -188,6 +188,7 @@ module.exports = (app) ->
 
   app.get "/api/user/:name/tasklogs", (req, res, next) ->
     name = req.params.name
-    TaskLog.find().or([{worker: name}, name: name]).exec (err, task) ->
+    TaskLog.find().or([{worker: name}, name: name])
+    .sort('-at').exec (err, task) ->
       console.log task
       res.send task

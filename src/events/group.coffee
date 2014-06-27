@@ -4,6 +4,7 @@ module.exports = (app) ->
   {User} = app.get "models"
   {Group} = app.get "models"
   {Task} = app.get "models"
+  {TaskLog} = app.get "models"
 
   app.post "/api/group/new", (req, res, next) ->
     name = req.body.name
@@ -128,3 +129,9 @@ module.exports = (app) ->
         res.send 400
       else
         res.send 200, groups
+
+  app.get "/api/group/:name/tasklogs", (req, res, next) ->
+    name = req.params.name
+    TaskLog.find({name: name}).sort('-at').exec (err, task) ->
+      console.log task
+      res.send task

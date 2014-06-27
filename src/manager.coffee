@@ -30,6 +30,7 @@ class BabascriptManager
       headers = 'Content-Type, Authorization, Content-Length,'
       headers += 'X-Requested-With, Origin, Accept-Encoding'
       methods = 'POST, PUT, GET, DELETE, OPTIONS'
+      console.log req.headers.origin
       res.setHeader 'Access-Control-Allow-Origin', req.headers.origin
       res.setHeader 'Access-Control-Allow-Credentials', true
       res.setHeader 'Access-Control-Allow-Methods', methods
@@ -71,12 +72,13 @@ class BabascriptManager
           console.log handshakeData
           token = handshakeData.query?.token
           if handshakeData.headers['user-agent'] is 'node-XMLHttpRequest'
-            handshakeData.actor = false
-            # handshakeData.user =
-            #   username:
             return callback null, true
-          if !token?
-            return callback 'error', false
+          #   handshakeData.actor = false
+          #   # handshakeData.user =
+          #   #   username:
+            
+          # if !token?
+          #   return callback 'error', false
           else
             Models.User.findOne {token: token}, (err, user) ->
               throw err if err
@@ -85,21 +87,5 @@ class BabascriptManager
                 callback null, true
               else
                 callback 'token not found', false
-# node-client側はどうしよ？
-# if handshakeData.headers['user-agent'] is 'node-XMLHttpRequest'
-#   return callback null, true
-# if handshakeData.headers.cookie?
-#   data = handshakeData.headers.cookie
-#   sessionID = cookie.parse(data)['connect.sid']
-#   PREFIX_LENGTH = 2
-#   SESSION_LENGTH = 24
-#   sid = sessionID.slice PREFIX_LENGTH, PREFIX_LENGTH + SESSION_LENGTH
-#   redisStore.get sid, (err, data) ->
-#     return callback 'error', false if err
-#     handshakeData.session = data
-#     callback null, true
-# else
-#   callback 'error', false
-
 
 module.exports = new BabascriptManager()
